@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Main Menu -->
+    <menuitem id="menu_netsuite_root"
+              name="NetSuite"
+              sequence="100"
+              web_icon="netsuite_pos_integration,static/description/icon.png"/>
+
+    <!-- Configuration Menu -->
+    <menuitem id="menu_netsuite_config"
+              name="Configuration"
+              parent="menu_netsuite_root"
+              action="action_netsuite_config"
+              sequence="10"/>
+
+    <!-- Sync Queue Menu -->
+    <menuitem id="menu_netsuite_sync_queue"
+              name="Sync Queue"
+              parent="menu_netsuite_root"
+              action="action_netsuite_sync_queue"
+              sequence="20"/>
+
+    <!-- Sync Logs Menu -->
+    <menuitem id="menu_netsuite_sync_log"
+              name="Sync Logs"
+              parent="menu_netsuite_root"
+              action="action_netsuite_sync_log"
+              sequence="30"/>
+
+</odoo>

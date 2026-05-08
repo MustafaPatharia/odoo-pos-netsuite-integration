@@ -1,0 +1,7 @@
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_netsuite_config_user,netsuite.config.user,model_netsuite_config,group_netsuite_user,1,0,0,0
+access_netsuite_config_manager,netsuite.config.manager,model_netsuite_config,group_netsuite_manager,1,1,1,1
+access_netsuite_sync_queue_user,netsuite.sync.queue.user,model_netsuite_sync_queue,group_netsuite_user,1,0,0,0
+access_netsuite_sync_queue_manager,netsuite.sync.queue.manager,model_netsuite_sync_queue,group_netsuite_manager,1,1,1,1
+access_netsuite_sync_log_user,netsuite.sync.log.user,model_netsuite_sync_log,group_netsuite_user,1,0,0,0
+access_netsuite_sync_log_manager,netsuite.sync.log.manager,model_netsuite_sync_log,group_netsuite_manager,1,1,1,0

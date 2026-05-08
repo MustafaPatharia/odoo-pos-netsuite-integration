@@ -1,0 +1,133 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Sync Queue Form View -->
+    <record id="view_netsuite_sync_queue_form" model="ir.ui.view">
+        <field name="name">netsuite.sync.queue.form</field>
+        <field name="model">netsuite.sync.queue</field>
+        <field name="arch" type="xml">
+            <form string="Sync Queue">
+                <header>
+                    <button name="action_process_now" string="Process Now" type="object"
+                            class="btn-primary" invisible="status in ['processing', 'success']"/>
+                    <button name="action_reset_to_pending" string="Reset to Pending" type="object"
+                            class="btn-warning" invisible="status not in ['failed', 'retry']"/>
+                    <button name="action_view_sync_log" string="View Sync Log" type="object" class="btn-secondary"/>
+                    <field name="status" widget="statusbar" statusbar_visible="pending,processing,success"/>
+                </header>
+                <sheet>
+                    <div class="oe_title">
+                        <label for="reference" class="oe_edit_only"/>
+                        <h1><field name="reference"/></h1>
+                    </div>
+
+                    <group>
+                        <group>
+                            <field name="config_id"/>
+                            <field name="record_type"/>
+                            <field name="model"/>
+                            <field name="record_id"/>
+                        </group>
+                        <group>
+                            <field name="sync_mode"/>
+                            <field name="priority"/>
+                            <field name="scheduled_date"/>
+                            <field name="processed_date" readonly="1"/>
+                        </group>
+                    </group>
+
+                    <group>
+                        <group>
+                            <field name="retry_count" readonly="1"/>
+                            <field name="batch_id"/>
+                        </group>
+                        <group>
+                            <field name="netsuite_id" readonly="1"/>
+                            <field name="netsuite_tran_id" readonly="1"/>
+                        </group>
+                    </group>
+
+                    <notebook>
+                        <page string="Request" name="request">
+                            <field name="request_payload" widget="ace" options="{'mode': 'json'}"/>
+                        </page>
+                        <page string="Response" name="response">
+                            <field name="response_payload" widget="ace" options="{'mode': 'json'}"/>
+                        </page>
+                        <page string="Error" name="error" invisible="not last_error">
+                            <field name="last_error"/>
+                        </page>
+                        <page string="Notes" name="notes">
+                            <field name="notes"/>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- Sync Queue Tree View -->
+    <record id="view_netsuite_sync_queue_tree" model="ir.ui.view">
+        <field name="name">netsuite.sync.queue.tree</field>
+        <field name="model">netsuite.sync.queue</field>
+        <field name="arch" type="xml">
+            <tree string="Sync Queue" decoration-success="status == 'success'"
+                  decoration-danger="status == 'failed'" decoration-info="status == 'processing'">
+                <field name="priority" widget="priority"/>
+                <field name="reference"/>
+                <field name="record_type"/>
+                <field name="status"/>
+                <field name="sync_mode"/>
+                <field name="retry_count"/>
+                <field name="scheduled_date"/>
+                <field name="processed_date"/>
+                <field name="netsuite_tran_id"/>
+            </tree>
+        </field>
+    </record>
+
+    <!-- Sync Queue Search View -->
+    <record id="view_netsuite_sync_queue_search" model="ir.ui.view">
+        <field name="name">netsuite.sync.queue.search</field>
+        <field name="model">netsuite.sync.queue</field>
+        <field name="arch" type="xml">
+            <search string="Search Sync Queue">
+                <field name="reference"/>
+                <field name="record_type"/>
+                <field name="netsuite_tran_id"/>
+                <filter name="pending" string="Pending" domain="[('status', '=', 'pending')]"/>
+                <filter name="processing" string="Processing" domain="[('status', '=', 'processing')]"/>
+                <filter name="success" string="Success" domain="[('status', '=', 'success')]"/>
+                <filter name="failed" string="Failed" domain="[('status', '=', 'failed')]"/>
+                <filter name="retry" string="Retry Queue" domain="[('status', '=', 'retry')]"/>
+                <separator/>
+                <filter name="realtime" string="Real-time" domain="[('sync_mode', '=', 'realtime')]"/>
+                <filter name="batch" string="Batch" domain="[('sync_mode', '=', 'batch')]"/>
+                <filter name="manual" string="Manual" domain="[('sync_mode', '=', 'manual')]"/>
+                <group expand="0" string="Group By">
+                    <filter name="group_status" string="Status" context="{'group_by': 'status'}"/>
+                    <filter name="group_type" string="Record Type" context="{'group_by': 'record_type'}"/>
+                    <filter name="group_mode" string="Sync Mode" context="{'group_by': 'sync_mode'}"/>
+                </group>
+            </search>
+        </field>
+    </record>
+
+    <!-- Sync Queue Action -->
+    <record id="action_netsuite_sync_queue" model="ir.actions.act_window">
+        <field name="name">Sync Queue</field>
+        <field name="res_model">netsuite.sync.queue</field>
+        <field name="view_mode">tree,form</field>
+        <field name="context">{'search_default_pending': 1}</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_empty_folder">
+                No sync queue items found
+            </p>
+            <p>
+                Queue items are created automatically when orders are placed.
+                You can also manually queue items for sync.
+            </p>
+        </field>
+    </record>
+
+</odoo>

@@ -1,0 +1,136 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- NetSuite Configuration Form View -->
+    <record id="view_netsuite_config_form" model="ir.ui.view">
+        <field name="name">netsuite.config.form</field>
+        <field name="model">netsuite.config</field>
+        <field name="arch" type="xml">
+            <form string="NetSuite Configuration">
+                <header>
+                    <button name="action_test_connection" string="Test Connection" type="object" class="btn-primary"/>
+                    <button name="action_view_sync_logs" string="View Sync Logs" type="object" class="btn-secondary"/>
+                    <button name="action_view_sync_queue" string="View Sync Queue" type="object" class="btn-secondary"/>
+                </header>
+                <sheet>
+                    <div class="oe_button_box" name="button_box">
+                        <button name="action_view_sync_logs" type="object" class="oe_stat_button" icon="fa-list">
+                            <field name="total_synced" widget="statinfo" string="Synced"/>
+                        </button>
+                        <button name="action_view_sync_logs" type="object" class="oe_stat_button" icon="fa-exclamation-triangle">
+                            <field name="total_failed" widget="statinfo" string="Failed"/>
+                        </button>
+                    </div>
+
+                    <div class="oe_title">
+                        <label for="name" class="oe_edit_only"/>
+                        <h1><field name="name" placeholder="e.g., NetSuite Integration"/></h1>
+                    </div>
+
+                    <group>
+                        <group>
+                            <field name="active"/>
+                            <field name="last_sync_date" readonly="1"/>
+                        </group>
+                    </group>
+
+                    <notebook>
+                        <page string="Connection" name="connection">
+                            <group>
+                                <group string="API Settings">
+                                    <field name="api_url" placeholder="http://mock-netsuite:3000/api"/>
+                                    <field name="account_id"/>
+                                </group>
+                                <group string="OAuth Credentials">
+                                    <field name="consumer_key" password="True"/>
+                                    <field name="consumer_secret" password="True"/>
+                                    <field name="token_id" password="True"/>
+                                    <field name="token_secret" password="True"/>
+                                </group>
+                            </group>
+                            <group>
+                                <group string="Timeout Settings">
+                                    <field name="connection_timeout"/>
+                                    <field name="request_timeout"/>
+                                </group>
+                            </group>
+                        </page>
+
+                        <page string="Sync Settings" name="sync_settings">
+                            <group>
+                                <group string="Sync Mode">
+                                    <field name="sync_mode" widget="radio"/>
+                                    <field name="enable_manual_sync"/>
+                                    <field name="enable_auto_sync"/>
+                                </group>
+                                <group string="Sync Triggers">
+                                    <field name="sync_on_order_confirm"/>
+                                    <field name="sync_on_payment"/>
+                                </group>
+                            </group>
+
+                            <group string="Batch Configuration" invisible="sync_mode != 'batch'">
+                                <group>
+                                    <field name="batch_size"/>
+                                    <field name="batch_schedule_time"/>
+                                </group>
+                            </group>
+                        </page>
+
+                        <page string="Retry &amp; Error Handling" name="retry">
+                            <group>
+                                <group string="Retry Configuration">
+                                    <field name="enable_retry"/>
+                                    <field name="max_retry_attempts" invisible="not enable_retry"/>
+                                    <field name="retry_delay_minutes" invisible="not enable_retry"/>
+                                </group>
+                            </group>
+                        </page>
+
+                        <page string="Logging &amp; Debug" name="logging">
+                            <group>
+                                <group>
+                                    <field name="enable_debug_logging"/>
+                                    <field name="log_payload"/>
+                                </group>
+                            </group>
+                        </page>
+                    </notebook>
+                </sheet>
+            </form>
+        </field>
+    </record>
+
+    <!-- NetSuite Configuration Tree View -->
+    <record id="view_netsuite_config_tree" model="ir.ui.view">
+        <field name="name">netsuite.config.tree</field>
+        <field name="model">netsuite.config</field>
+        <field name="arch" type="xml">
+            <tree string="NetSuite Configurations">
+                <field name="name"/>
+                <field name="sync_mode"/>
+                <field name="active"/>
+                <field name="total_synced"/>
+                <field name="total_failed"/>
+                <field name="last_sync_date"/>
+            </tree>
+        </field>
+    </record>
+
+    <!-- NetSuite Configuration Action -->
+    <record id="action_netsuite_config" model="ir.actions.act_window">
+        <field name="name">NetSuite Configuration</field>
+        <field name="res_model">netsuite.config</field>
+        <field name="view_mode">tree,form</field>
+        <field name="help" type="html">
+            <p class="o_view_nocontent_smiling_face">
+                Configure NetSuite Integration
+            </p>
+            <p>
+                Set up connection settings, sync modes, and operational parameters
+                for integrating Odoo POS with NetSuite.
+            </p>
+        </field>
+    </record>
+
+</odoo>

@@ -1,0 +1,90 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- POS Order Form View Extension -->
+    <record id="view_pos_order_form_netsuite" model="ir.ui.view">
+        <field name="name">pos.order.form.netsuite</field>
+        <field name="model">pos.order</field>
+        <field name="inherit_id" ref="point_of_sale.view_pos_pos_form"/>
+        <field name="arch" type="xml">
+
+            <xpath expr="//header" position="inside">
+                <button name="action_sync_to_netsuite" string="Sync to NetSuite" type="object"
+                        class="btn-primary" invisible="netsuite_sync_status in ['synced', 'queued']"/>
+                <button name="action_force_resync" string="Force Resync" type="object"
+                        class="btn-warning" invisible="netsuite_sync_status != 'synced'"
+                        groups="netsuite_pos_integration.group_netsuite_manager"/>
+                <button name="action_view_netsuite_logs" string="View Sync Logs" type="object"
+                        class="btn-secondary" invisible="netsuite_sync_status == 'not_synced'"/>
+                <button name="action_view_sync_queue" string="View Queue" type="object"
+                        class="btn-secondary" invisible="netsuite_sync_status == 'not_synced'"/>
+            </xpath>
+
+            <xpath expr="//sheet/group" position="after">
+                <group name="netsuite_sync" string="NetSuite Sync Information">
+                    <group>
+                        <field name="netsuite_sync_status" widget="badge"
+                               decoration-success="netsuite_sync_status == 'synced'"
+                               decoration-warning="netsuite_sync_status == 'queued'"
+                               decoration-danger="netsuite_sync_status == 'failed'"/>
+                        <field name="netsuite_tran_id" readonly="1"/>
+                        <field name="netsuite_id" readonly="1"/>
+                    </group>
+                    <group>
+                        <field name="netsuite_sync_date" readonly="1"/>
+                        <field name="netsuite_sync_count" readonly="1"/>
+                        <field name="netsuite_error" readonly="1" invisible="not netsuite_error"/>
+                    </group>
+                </group>
+            </xpath>
+
+        </field>
+    </record>
+
+    <!-- POS Order Tree View Extension -->
+    <record id="view_pos_order_tree_netsuite" model="ir.ui.view">
+        <field name="name">pos.order.tree.netsuite</field>
+        <field name="model">pos.order</field>
+        <field name="inherit_id" ref="point_of_sale.view_pos_order_tree"/>
+        <field name="arch" type="xml">
+            <xpath expr="//tree" position="attributes">
+                <attribute name="decoration-success">netsuite_sync_status == 'synced'</attribute>
+                <attribute name="decoration-danger">netsuite_sync_status == 'failed'</attribute>
+            </xpath>
+            <xpath expr="//field[@name='amount_total']" position="after">
+                <field name="netsuite_sync_status" optional="show"/>
+                <field name="netsuite_tran_id" optional="hide"/>
+            </xpath>
+        </field>
+    </record>
+
+    <!-- POS Order Search View Extension -->
+    <record id="view_pos_order_search_netsuite" model="ir.ui.view">
+        <field name="name">pos.order.search.netsuite</field>
+        <field name="model">pos.order</field>
+        <field name="inherit_id" ref="point_of_sale.view_pos_order_search"/>
+        <field name="arch" type="xml">
+            <xpath expr="//search" position="inside">
+                <separator/>
+                <filter name="not_synced" string="Not Synced" domain="[('netsuite_sync_status', '=', 'not_synced')]"/>
+                <filter name="synced" string="Synced" domain="[('netsuite_sync_status', '=', 'synced')]"/>
+                <filter name="failed" string="Sync Failed" domain="[('netsuite_sync_status', '=', 'failed')]"/>
+                <filter name="queued" string="Queued" domain="[('netsuite_sync_status', '=', 'queued')]"/>
+            </xpath>
+        </field>
+    </record>
+
+    <!-- Action to Sync Multiple Orders -->
+    <record id="action_sync_multiple_orders" model="ir.actions.server">
+        <field name="name">Sync to NetSuite</field>
+        <field name="model_id" ref="point_of_sale.model_pos_order"/>
+        <field name="binding_model_id" ref="point_of_sale.model_pos_order"/>
+        <field name="binding_view_types">list</field>
+        <field name="state">code</field>
+        <field name="code">
+if records:
+    action = records.action_sync_to_netsuite()
+        </field>
+    </record>
+
+</odoo>

@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- NetSuite Integration Security Groups -->
+    <record id="group_netsuite_user" model="res.groups">
+        <field name="name">NetSuite User</field>
+        <field name="category_id" ref="base.module_category_sales_point_of_sale"/>
+        <field name="comment">Can view NetSuite sync status and logs</field>
+    </record>
+
+    <record id="group_netsuite_manager" model="res.groups">
+        <field name="name">NetSuite Manager</field>
+        <field name="category_id" ref="base.module_category_sales_point_of_sale"/>
+        <field name="implied_ids" eval="[(4, ref('group_netsuite_user'))]"/>
+        <field name="comment">Can manage NetSuite configuration and trigger manual syncs</field>
+    </record>
+
+    <!-- Add Manager group to Point of Sale Manager -->
+    <record id="point_of_sale.group_pos_manager" model="res.groups">
+        <field name="implied_ids" eval="[(4, ref('group_netsuite_manager'))]"/>
+    </record>
+
+</odoo>
