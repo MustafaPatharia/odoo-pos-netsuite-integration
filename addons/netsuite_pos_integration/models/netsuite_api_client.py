@@ -6,7 +6,7 @@ import requests
 import json
 import time
 import logging
-from datetime import datetime
+from datetime import datetime, timedelta
 
 _logger = logging.getLogger(__name__)
 
@@ -52,20 +52,20 @@ class NetSuiteAPIClient(models.AbstractModel):
                     url,
                     headers=headers,
                     json=data,
-                    timeout=(config.connection_timeout, config.request_timeout)
+                    timeout=(config.config_connection_timeout or 30, config.config_request_timeout or 60)
                 )
             elif method == 'PUT':
                 response = requests.put(
                     url,
                     headers=headers,
                     json=data,
-                    timeout=(config.connection_timeout, config.request_timeout)
+                    timeout=(config.config_connection_timeout or 30, config.config_request_timeout or 60)
                 )
             elif method == 'GET':
                 response = requests.get(
                     url,
                     headers=headers,
-                    timeout=(config.connection_timeout, config.request_timeout)
+                    timeout=(config.config_connection_timeout or 30, config.config_request_timeout or 60)
                 )
             else:
                 raise UserError(_('Unsupported HTTP method: %s') % method)
@@ -82,12 +82,20 @@ class NetSuiteAPIClient(models.AbstractModel):
             if response.status_code in [200, 201]:
                 if isinstance(response_data, dict) and response_data.get('success') is False:
                     # NetSuite returned success=false
-                    error_msg = response_data.get('error', {}).get('message', 'Unknown error')
+                    error_obj = response_data.get('error', {})
+                    if isinstance(error_obj, dict):
+                        error_msg = error_obj.get('message', 'Unknown error')
+                    else:
+                        error_msg = str(error_obj) if error_obj else 'Unknown error'
                     return False, response_data, error_msg, response.status_code, execution_time
 
                 return True, response_data, None, response.status_code, execution_time
             else:
-                error_msg = response_data.get('error', {}).get('message', response.text)
+                error_obj = response_data.get('error', {}) if isinstance(response_data, dict) else {}
+                if isinstance(error_obj, dict):
+                    error_msg = error_obj.get('message', response.text)
+                else:
+                    error_msg = str(error_obj) if error_obj else response.text
                 return False, response_data, error_msg, response.status_code, execution_time
 
         except requests.exceptions.Timeout:
@@ -129,7 +137,8 @@ class NetSuiteAPIClient(models.AbstractModel):
             'netsuite_tran_id': netsuite_tran_id,
         }
 
-        if config.log_payload:
+        # Log payload if debug logging is enabled in NetSuite config
+        if config.config_debug_logging:
             log_vals['request_payload'] = json.dumps(request_data, indent=2) if request_data else ''
             log_vals['response_payload'] = json.dumps(response_data, indent=2) if response_data else ''
 
@@ -339,3 +348,197 @@ class NetSuiteAPIClient(models.AbstractModel):
                         })
 
         return response_data
+
+    @api.model
+    def sync_items_hourly(self):
+        """
+        Hourly sync of items (products) from Odoo to NetSuite
+        Called by cron job every hour
+        """
+        config = self.env['netsuite.config'].get_active_config()
+
+        if not config or not config.netsuite_config:
+            _logger.warning("NetSuite config not loaded, skipping hourly item sync")
+            return
+
+        # Check if hourly sync is enabled
+        if not config.config_hourly_sync_enabled:
+            _logger.info("Hourly item sync is disabled in NetSuite configuration")
+            return
+
+        _logger.info("Starting hourly item sync...")
+
+        try:
+            # Get products that need syncing
+            # Logic: Products modified in last 1 hour and not synced
+            one_hour_ago = datetime.now() - timedelta(hours=1)
+
+            products = self.env['product.product'].search([
+                ('write_date', '>=', one_hour_ago),
+                '|',
+                ('netsuite_sync_status', '=', 'not_synced'),
+                ('netsuite_sync_status', '=', False),
+            ], limit=config.config_batch_size or 100)
+
+            if not products:
+                _logger.info("No products to sync in hourly job")
+                return
+
+            _logger.info(f"Found {len(products)} products to sync")
+
+            # TODO: Implement actual product sync to NetSuite
+            # For now, just log
+            for product in products:
+                _logger.info(f"Would sync product: {product.name} (ID: {product.id})")
+
+            _logger.info(f"Hourly item sync completed: {len(products)} items")
+
+        except Exception as e:
+            _logger.error(f"Error in hourly item sync: {str(e)}", exc_info=True)
+
+    @api.model
+    def sync_end_of_day_invoices(self):
+        """
+        End-of-day sync: Create ONE invoice per day per shop
+        Called by cron job at end-of-day time (e.g., 23:59)
+
+        Business Logic:
+        - Collects ALL orders from the COMPLETED business day
+        - Creates ONE consolidated invoice per shop
+        - Sends to NetSuite as a single transaction
+        """
+        from datetime import timedelta
+        import pytz
+
+        config = self.env['netsuite.config'].get_active_config()
+
+        if not config or not config.netsuite_config:
+            _logger.warning("NetSuite config not loaded, skipping end-of-day sync")
+            return
+
+        # Check if end-of-day sync is enabled
+        if not config.config_end_of_day_sync_enabled:
+            _logger.info("End-of-day sync is disabled in NetSuite configuration")
+            return
+
+        _logger.info("Starting end-of-day invoice sync...")
+
+        try:
+            # Get timezone
+            tz = pytz.timezone(self.env.user.tz or 'UTC')
+            now_utc = datetime.utcnow()
+            now_local = pytz.utc.localize(now_utc).astimezone(tz)
+
+            # Get COMPLETED business day (yesterday)
+            business_day = (now_local - timedelta(days=1)).date()
+
+            # Start and end of the business day in local time
+            day_start_local = tz.localize(datetime.combine(business_day, datetime.min.time()))
+            day_end_local = tz.localize(datetime.combine(business_day, datetime.max.time()))
+
+            # Convert to UTC for database query
+            day_start_utc = day_start_local.astimezone(pytz.utc).replace(tzinfo=None)
+            day_end_utc = day_end_local.astimezone(pytz.utc).replace(tzinfo=None)
+
+            _logger.info(f"Syncing orders from business day: {business_day}")
+            _logger.info(f"Date range (UTC): {day_start_utc} to {day_end_utc}")
+
+            # Get all POS orders from the completed business day that haven't been synced
+            pos_orders = self.env['pos.order'].search([
+                ('date_order', '>=', day_start_utc),
+                ('date_order', '<=', day_end_utc),
+                ('state', 'in', ['paid', 'done', 'invoiced']),
+                ('netsuite_sync_status', 'in', ['not_synced', 'failed']),
+            ])
+
+            if not pos_orders:
+                _logger.info(f"No orders to sync for business day {business_day}")
+                return
+
+            _logger.info(f"Found {len(pos_orders)} orders to sync from {business_day}")
+
+            # Group by shop (session_id.config_id)
+            orders_by_shop = {}
+            for order in pos_orders:
+                shop_id = order.session_id.config_id.id if order.session_id and order.session_id.config_id else 'default'
+                if shop_id not in orders_by_shop:
+                    orders_by_shop[shop_id] = []
+                orders_by_shop[shop_id].append(order)
+
+            _logger.info(f"Orders grouped into {len(orders_by_shop)} shop(s)")
+
+            # Create one invoice per shop
+            for shop_id, orders in orders_by_shop.items():
+                shop_name = orders[0].session_id.config_id.name if orders[0].session_id and orders[0].session_id.config_id else 'Default Shop'
+
+                _logger.info(f"Creating consolidated invoice for {shop_name}: {len(orders)} orders")
+
+                # Prepare consolidated invoice data
+                invoice_data = {
+                    'tranDate': business_day.strftime('%Y-%m-%d'),
+                    'externalId': f'ODOO-EOD-{business_day.strftime("%Y%m%d")}-SHOP-{shop_id}',
+                    'shop': shop_name,
+                    'orders': [
+                        {
+                            'orderId': order.id,
+                            'orderName': order.name,
+                            'amount': order.amount_total,
+                            'date': order.date_order.strftime('%Y-%m-%d %H:%M:%S'),
+                        } for order in orders
+                    ],
+                    'totalAmount': sum(order.amount_total for order in orders),
+                    'orderCount': len(orders),
+                }
+
+                # Make API request
+                success, response_data, error_msg, status_code, execution_time = self._make_request(
+                    config, 'app/site/hosting/restlet.nl?action=createEODInvoice', 'POST', invoice_data
+                )
+
+                if success:
+                    _logger.info(f"Successfully synced EOD invoice for {shop_name}")
+
+                    # Mark all orders as synced
+                    netsuite_invoice_id = response_data.get('internalId')
+                    netsuite_tran_id = response_data.get('tranId')
+
+                    for order in orders:
+                        order.write({
+                            'netsuite_sync_status': 'synced',
+                            'netsuite_id': netsuite_invoice_id,
+                            'netsuite_tran_id': netsuite_tran_id,
+                            'netsuite_sync_date': datetime.now(),
+                            'netsuite_error': False,
+                        })
+
+                    # Log the sync
+                    self._log_sync(
+                        config, f'EOD-{business_day}-SHOP-{shop_id}', 'eod_invoice',
+                        0, 'pos.order', 'success', 'create',
+                        f"{config.api_url}/app/site/hosting/restlet.nl?action=createEODInvoice",
+                        'POST', invoice_data, response_data, None,
+                        status_code, execution_time, netsuite_invoice_id
+                    )
+                else:
+                    _logger.error(f"Failed to sync EOD invoice for {shop_name}: {error_msg}")
+
+                    # Mark orders as failed
+                    for order in orders:
+                        order.write({
+                            'netsuite_sync_status': 'failed',
+                            'netsuite_error': f'EOD sync failed: {error_msg}',
+                        })
+
+                    # Log the failure
+                    self._log_sync(
+                        config, f'EOD-{business_day}-SHOP-{shop_id}', 'eod_invoice',
+                        0, 'pos.order', 'failed', 'create',
+                        f"{config.api_url}/app/site/hosting/restlet.nl?action=createEODInvoice",
+                        'POST', invoice_data, response_data, error_msg,
+                        status_code, execution_time, None
+                    )
+
+            _logger.info(f"End-of-day sync completed for {business_day}")
+
+        except Exception as e:
+            _logger.error(f"Error in end-of-day sync: {str(e)}", exc_info=True)

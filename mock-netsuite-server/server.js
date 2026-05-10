@@ -88,6 +88,10 @@ app.post('/app/site/hosting/restlet.nl', (req, res) => {
         return handleCreatePayment(req, res, payload);
       case 'getStatus':
         return handleGetStatus(req, res, payload);
+      case 'getConfig':
+        return handleGetConfig(req, res);
+      case 'createEODInvoice':
+        return handleCreateEODInvoice(req, res, payload);
       default:
         return res.status(400).json({
           success: false,
@@ -102,6 +106,63 @@ app.post('/app/site/hosting/restlet.nl', (req, res) => {
     });
   }
 });
+
+// Also support GET for config
+app.get('/app/site/hosting/restlet.nl', (req, res) => {
+  const { action } = req.query;
+
+  if (action === 'getConfig') {
+    return handleGetConfig(req, res);
+  }
+
+  res.status(400).json({
+    success: false,
+    error: 'GET method only supports getConfig action'
+  });
+});
+
+// Handle Get Configuration
+function handleGetConfig(req, res) {
+  console.log('\n=== Configuration Request ===');
+
+  // NetSuite returns configuration for Odoo
+  const config = {
+    success: true,
+    configuration: {
+      // Retry settings
+      retry_enabled: true,
+      max_retries: 3,
+      retry_delay_minutes: 5,
+
+      // Email settings
+      send_email_on_failure: true,
+      notification_email: 'admin@example.com',
+
+      // Batch settings
+      batch_size: 100,
+
+      // Sync schedules
+      hourly_sync_enabled: true,
+      end_of_day_sync_time: '23:59',
+      end_of_day_sync_enabled: true,
+
+      // Logging
+      enable_debug_logging: true,
+      log_retention_days: 30,
+
+      // Business rules
+      sync_on_invoice_confirm: true,
+      require_payment_before_sync: false,
+
+      // Timeouts
+      connection_timeout: 30,
+      request_timeout: 60
+    }
+  };
+
+  logSync('GET_CONFIG', 'success', config);
+  res.json(config);
+}
 
 // Handle Sales Order Creation
 function handleCreateSalesOrder(req, res, payload) {
@@ -291,6 +352,78 @@ function handleGetStatus(req, res, payload) {
     });
 
   } catch (error) {
+    res.status(500).json({
+      success: false,
+      error: error.message
+    });
+  }
+}
+
+// Handle End-of-Day Invoice Creation
+function handleCreateEODInvoice(req, res, payload) {
+  try {
+    const { tranDate, externalId, shop, orders, totalAmount, orderCount } = payload;
+
+    console.log('\n=== End-of-Day Invoice Creation ===');
+    console.log('Business Date:', tranDate);
+    console.log('Shop:', shop);
+    console.log('Order Count:', orderCount);
+    console.log('Total Amount:', totalAmount);
+
+    // Validate required fields
+    if (!tranDate || !externalId || !orders || !Array.isArray(orders)) {
+      logSync('CREATE_EOD_INVOICE', 'failed', payload, 'Missing required fields');
+      return res.status(400).json({
+        success: false,
+        error: 'Missing required fields: tranDate, externalId, and orders are required'
+      });
+    }
+
+    // Generate NetSuite IDs
+    const internalId = uuidv4();
+    const tranId = `INV-EOD-${tranDate.replace(/-/g, '')}`;
+
+    // Create EOD invoice record
+    const eodInvoice = {
+      internalId: internalId,
+      tranId: tranId,
+      externalId: externalId,
+      type: 'invoice',
+      subType: 'end_of_day',
+      tranDate: tranDate,
+      shop: shop,
+      orderCount: orderCount,
+      orders: orders,
+      totalAmount: totalAmount,
+      status: 'Posted',
+      createdDate: new Date().toISOString(),
+      memo: `End-of-Day consolidated invoice for ${shop} on ${tranDate} (${orderCount} orders)`
+    };
+
+    // Store in database
+    mockDatabase.salesOrders.set(internalId, eodInvoice);
+
+    // Log successful creation
+    logSync('CREATE_EOD_INVOICE', 'success', payload);
+
+    console.log('✓ EOD Invoice created:', tranId);
+    console.log('Internal ID:', internalId);
+
+    // Return success response
+    res.json({
+      success: true,
+      internalId: internalId,
+      tranId: tranId,
+      externalId: externalId,
+      type: 'invoice',
+      status: 'Posted',
+      totalAmount: totalAmount,
+      orderCount: orderCount,
+      message: `End-of-Day invoice created successfully for ${orderCount} orders`
+    });
+
+  } catch (error) {
+    logSync('CREATE_EOD_INVOICE', 'error', payload, error.message);
     res.status(500).json({
       success: false,
       error: error.message

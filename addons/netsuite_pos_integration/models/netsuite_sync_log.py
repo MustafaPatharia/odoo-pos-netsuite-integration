@@ -30,6 +30,7 @@ class NetSuiteSyncLog(models.Model):
         ('sales_order', 'Sales Order'),
         ('customer', 'Customer'),
         ('payment', 'Payment'),
+        ('eod_invoice', 'End-of-Day Invoice'),
     ], string='Record Type', required=True, index=True)
 
     record_id = fields.Integer(

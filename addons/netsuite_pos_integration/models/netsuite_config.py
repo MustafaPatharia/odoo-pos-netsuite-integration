@@ -2,12 +2,17 @@
 
 from odoo import models, fields, api
 from odoo.exceptions import ValidationError
+import requests
+import json
+import logging
+
+_logger = logging.getLogger(__name__)
 
 
 class NetSuiteConfig(models.Model):
     """
     NetSuite Integration Configuration
-    Manages connection settings, sync modes, and operational parameters
+    ONLY stores credentials - NetSuite controls all business logic
     """
     _name = 'netsuite.config'
     _description = 'NetSuite Configuration'
@@ -26,16 +31,20 @@ class NetSuiteConfig(models.Model):
         help='Enable or disable this configuration'
     )
 
-    # Connection Settings
+    # ============================================
+    # CREDENTIALS ONLY - Nothing else stored here
+    # ============================================
+
     api_url = fields.Char(
         string='API URL',
         required=True,
-        default='http://mock-netsuite:3000/api',
-        help='NetSuite RESTlet endpoint URL'
+        default='http://host.docker.internal:3000',
+        help='NetSuite base URL'
     )
 
     account_id = fields.Char(
         string='Account ID',
+        required=True,
         help='NetSuite Account ID'
     )
 
@@ -59,147 +68,218 @@ class NetSuiteConfig(models.Model):
         help='OAuth Token Secret'
     )
 
-    # Sync Mode Configuration
-    sync_mode = fields.Selection([
-        ('realtime', 'Real-time Sync'),
-        ('batch', 'Daily Batch Sync'),
-    ], string='Sync Mode', required=True, default='realtime',
-       help='Choose how orders are synced to NetSuite')
+    # ============================================
+    # Configuration from NetSuite (Read-only in Odoo)
+    # ============================================
 
-    enable_manual_sync = fields.Boolean(
-        string='Enable Manual Sync',
-        default=True,
-        help='Allow manual sync via UI buttons'
+    netsuite_config = fields.Text(
+        string='NetSuite Configuration JSON',
+        readonly=True,
+        help='Raw configuration fetched from NetSuite'
     )
 
-    enable_auto_sync = fields.Boolean(
-        string='Enable Auto Sync',
-        default=True,
-        help='Automatically sync based on configured triggers'
-    )
-
-    # Batch Configuration
-    batch_size = fields.Integer(
-        string='Batch Size',
-        default=50,
-        help='Number of records to process in each batch'
-    )
-
-    batch_schedule_time = fields.Char(
-        string='Batch Schedule Time',
-        default='02:00',
-        help='Time to run daily batch sync (HH:MM format)'
-    )
-
-    # Retry Configuration
-    enable_retry = fields.Boolean(
-        string='Enable Retry',
-        default=True,
-        help='Automatically retry failed syncs'
-    )
-
-    max_retry_attempts = fields.Integer(
-        string='Max Retry Attempts',
-        default=3,
-        help='Maximum number of retry attempts'
-    )
-
-    retry_delay_minutes = fields.Integer(
-        string='Retry Delay (Minutes)',
-        default=5,
-        help='Delay between retry attempts in minutes'
-    )
-
-    # Timeout Settings
-    connection_timeout = fields.Integer(
-        string='Connection Timeout (seconds)',
-        default=30,
-        help='API connection timeout in seconds'
-    )
-
-    request_timeout = fields.Integer(
-        string='Request Timeout (seconds)',
-        default=60,
-        help='API request timeout in seconds'
-    )
-
-    # Logging & Debug
-    enable_debug_logging = fields.Boolean(
-        string='Enable Debug Logging',
-        default=False,
-        help='Log detailed debug information'
-    )
-
-    log_payload = fields.Boolean(
-        string='Log Request/Response Payload',
-        default=True,
-        help='Store full API request and response data'
-    )
-
-    # Sync Triggers
-    sync_on_order_confirm = fields.Boolean(
-        string='Sync on Order Confirmation',
-        default=True,
-        help='Trigger sync when POS order is confirmed'
-    )
-
-    sync_on_payment = fields.Boolean(
-        string='Sync on Payment',
-        default=False,
-        help='Trigger sync when payment is completed'
-    )
-
-    # Statistics
-    total_synced = fields.Integer(
-        string='Total Synced',
-        compute='_compute_sync_stats',
-        store=False
-    )
-
-    total_failed = fields.Integer(
-        string='Total Failed',
-        compute='_compute_sync_stats',
-        store=False
-    )
-
-    last_sync_date = fields.Datetime(
-        string='Last Sync Date',
+    last_config_fetch = fields.Datetime(
+        string='Last Config Fetch',
         readonly=True
     )
+    
+    # ============================================
+    # Computed Fields from NetSuite Config
+    # ============================================
+    
+    config_retry_enabled = fields.Boolean(
+        string='Retry Enabled',
+        compute='_compute_netsuite_config_fields',
+        store=False
+    )
+    
+    config_max_retries = fields.Integer(
+        string='Max Retries',
+        compute='_compute_netsuite_config_fields',
+        store=False
+    )
+    
+    config_retry_delay = fields.Integer(
+        string='Retry Delay (minutes)',
+        compute='_compute_netsuite_config_fields',
+        store=False
+    )
+    
+    config_send_email = fields.Boolean(
+        string='Send Email on Failure',
+        compute='_compute_netsuite_config_fields',
+        store=False
+    )
+    
+    config_notification_email = fields.Char(
+        string='Notification Email',
+        compute='_compute_netsuite_config_fields',
+        store=False
+    )
+    
+    config_batch_size = fields.Integer(
+        string='Batch Size',
+        compute='_compute_netsuite_config_fields',
+        store=False
+    )
+    
+    config_hourly_sync_enabled = fields.Boolean(
+        string='Hourly Sync Enabled',
+        compute='_compute_netsuite_config_fields',
+        store=False
+    )
+    
+    config_end_of_day_sync_enabled = fields.Boolean(
+        string='End of Day Sync Enabled',
+        compute='_compute_netsuite_config_fields',
+        store=False
+    )
+    
+    config_end_of_day_sync_time = fields.Char(
+        string='End of Day Sync Time',
+        compute='_compute_netsuite_config_fields',
+        store=False
+    )
+    
+    config_debug_logging = fields.Boolean(
+        string='Debug Logging',
+        compute='_compute_netsuite_config_fields',
+        store=False
+    )
+    
+    config_log_retention_days = fields.Integer(
+        string='Log Retention (days)',
+        compute='_compute_netsuite_config_fields',
+        store=False
+    )
+    
+    config_sync_on_invoice_confirm = fields.Boolean(
+        string='Sync on Invoice Confirm',
+        compute='_compute_netsuite_config_fields',
+        store=False
+    )
+    
+    config_connection_timeout = fields.Integer(
+        string='Connection Timeout (seconds)',
+        compute='_compute_netsuite_config_fields',
+        store=False
+    )
+    
+    config_request_timeout = fields.Integer(
+        string='Request Timeout (seconds)',
+        compute='_compute_netsuite_config_fields',
+        store=False
+    )
 
-    @api.constrains('batch_size')
-    def _check_batch_size(self):
+    # ============================================
+    # Methods
+    # ============================================
+    
+    @api.depends('netsuite_config')
+    def _compute_netsuite_config_fields(self):
+        """Parse NetSuite config JSON and populate computed fields"""
         for record in self:
-            if record.batch_size < 1 or record.batch_size > 1000:
-                raise ValidationError('Batch size must be between 1 and 1000')
+            if not record.netsuite_config:
+                record.config_retry_enabled = False
+                record.config_max_retries = 0
+                record.config_retry_delay = 0
+                record.config_send_email = False
+                record.config_notification_email = ''
+                record.config_batch_size = 0
+                record.config_hourly_sync_enabled = False
+                record.config_end_of_day_sync_enabled = False
+                record.config_end_of_day_sync_time = ''
+                record.config_debug_logging = False
+                record.config_log_retention_days = 0
+                record.config_sync_on_invoice_confirm = False
+                record.config_connection_timeout = 0
+                record.config_request_timeout = 0
+                continue
+                
+            try:
+                config_json = json.loads(record.netsuite_config)
+                config = config_json.get('configuration', {})
+                
+                record.config_retry_enabled = config.get('retry_enabled', False)
+                record.config_max_retries = config.get('max_retries', 0)
+                record.config_retry_delay = config.get('retry_delay_minutes', 0)
+                record.config_send_email = config.get('send_email_on_failure', False)
+                record.config_notification_email = config.get('notification_email', '')
+                record.config_batch_size = config.get('batch_size', 0)
+                record.config_hourly_sync_enabled = config.get('hourly_sync_enabled', False)
+                record.config_end_of_day_sync_enabled = config.get('end_of_day_sync_enabled', False)
+                record.config_end_of_day_sync_time = config.get('end_of_day_sync_time', '')
+                record.config_debug_logging = config.get('enable_debug_logging', False)
+                record.config_log_retention_days = config.get('log_retention_days', 0)
+                record.config_sync_on_invoice_confirm = config.get('sync_on_invoice_confirm', False)
+                record.config_connection_timeout = config.get('connection_timeout', 0)
+                record.config_request_timeout = config.get('request_timeout', 0)
+            except:
+                record.config_retry_enabled = False
+                record.config_max_retries = 0
+                record.config_retry_delay = 0
+                record.config_send_email = False
+                record.config_notification_email = ''
+                record.config_batch_size = 0
+                record.config_hourly_sync_enabled = False
+                record.config_end_of_day_sync_enabled = False
+                record.config_end_of_day_sync_time = ''
+                record.config_debug_logging = False
+                record.config_log_retention_days = 0
+                record.config_sync_on_invoice_confirm = False
+                record.config_connection_timeout = 0
+                record.config_request_timeout = 0
 
-    @api.constrains('max_retry_attempts')
-    def _check_retry_attempts(self):
-        for record in self:
-            if record.max_retry_attempts < 0 or record.max_retry_attempts > 10:
-                raise ValidationError('Max retry attempts must be between 0 and 10')
+    def action_fetch_config(self):
+        """Fetch configuration from NetSuite"""
+        self.ensure_one()
+        try:
+            headers = {
+                'Content-Type': 'application/json',
+                'Authorization': f'OAuth realm="{self.account_id}"'
+            }
 
-    def _compute_sync_stats(self):
-        for record in self:
-            SyncLog = self.env['netsuite.sync.log']
-            record.total_synced = SyncLog.search_count([
-                ('config_id', '=', record.id),
-                ('status', '=', 'success')
-            ])
-            record.total_failed = SyncLog.search_count([
-                ('config_id', '=', record.id),
-                ('status', '=', 'failed')
-            ])
+            url = f"{self.api_url.rstrip('/')}/app/site/hosting/restlet.nl?action=getConfig"
+
+            response = requests.get(url, headers=headers, timeout=30)
+            response.raise_for_status()
+
+            config_data = response.json()
+
+            self.write({
+                'netsuite_config': json.dumps(config_data, indent=2),
+                'last_config_fetch': fields.Datetime.now()
+            })
+
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': 'Configuration Fetched',
+                    'message': 'Successfully fetched configuration from NetSuite',
+                    'type': 'success',
+                    'sticky': False,
+                }
+            }
+        except Exception as e:
+            _logger.error(f'Error fetching config from NetSuite: {str(e)}')
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': 'Fetch Failed',
+                    'message': f'Error: {str(e)}',
+                    'type': 'danger',
+                    'sticky': True,
+                }
+            }
 
     def action_test_connection(self):
         """Test NetSuite API connection"""
         self.ensure_one()
         try:
-            import requests
-            response = requests.get(
-                f"{self.api_url.rstrip('/api')}/health",
-                timeout=self.connection_timeout
-            )
+            url = f"{self.api_url.rstrip('/')}/health"
+            response = requests.get(url, timeout=30)
             response.raise_for_status()
 
             return {
@@ -207,7 +287,7 @@ class NetSuiteConfig(models.Model):
                 'tag': 'display_notification',
                 'params': {
                     'title': 'Connection Successful',
-                    'message': 'Successfully connected to NetSuite API',
+                    'message': 'Successfully connected to NetSuite',
                     'type': 'success',
                     'sticky': False,
                 }
@@ -223,6 +303,25 @@ class NetSuiteConfig(models.Model):
                     'sticky': True,
                 }
             }
+
+    @api.model
+    def get_active_config(self):
+        """Get the active configuration"""
+        config = self.search([('active', '=', True)], limit=1)
+        if not config:
+            raise ValidationError('No active NetSuite configuration found. Please configure NetSuite integration.')
+        return config
+
+    def get_netsuite_config_value(self, key, default=None):
+        """Get a configuration value from NetSuite config JSON"""
+        self.ensure_one()
+        if not self.netsuite_config:
+            return default
+        try:
+            config = json.loads(self.netsuite_config)
+            return config.get(key, default)
+        except:
+            return default
 
     def action_view_sync_logs(self):
         """Open sync logs for this configuration"""
@@ -248,10 +347,3 @@ class NetSuiteConfig(models.Model):
             'context': {'default_config_id': self.id}
         }
 
-    @api.model
-    def get_active_config(self):
-        """Get active NetSuite configuration"""
-        config = self.search([('active', '=', True)], limit=1)
-        if not config:
-            raise ValidationError('No active NetSuite configuration found. Please configure NetSuite integration first.')
-        return config

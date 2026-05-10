@@ -9,19 +9,10 @@
             <form string="NetSuite Configuration">
                 <header>
                     <button name="action_test_connection" string="Test Connection" type="object" class="btn-primary"/>
+                    <button name="action_fetch_config" string="Fetch Configuration from NetSuite" type="object" class="btn-primary"/>
                     <button name="action_view_sync_logs" string="View Sync Logs" type="object" class="btn-secondary"/>
-                    <button name="action_view_sync_queue" string="View Sync Queue" type="object" class="btn-secondary"/>
                 </header>
                 <sheet>
-                    <div class="oe_button_box" name="button_box">
-                        <button name="action_view_sync_logs" type="object" class="oe_stat_button" icon="fa-list">
-                            <field name="total_synced" widget="statinfo" string="Synced"/>
-                        </button>
-                        <button name="action_view_sync_logs" type="object" class="oe_stat_button" icon="fa-exclamation-triangle">
-                            <field name="total_failed" widget="statinfo" string="Failed"/>
-                        </button>
-                    </div>
-
                     <div class="oe_title">
                         <label for="name" class="oe_edit_only"/>
                         <h1><field name="name" placeholder="e.g., NetSuite Integration"/></h1>
@@ -30,70 +21,68 @@
                     <group>
                         <group>
                             <field name="active"/>
-                            <field name="last_sync_date" readonly="1"/>
                         </group>
                     </group>
 
                     <notebook>
-                        <page string="Connection" name="connection">
+                        <page string="Credentials" name="credentials">
                             <group>
                                 <group string="API Settings">
-                                    <field name="api_url" placeholder="http://mock-netsuite:3000/api"/>
-                                    <field name="account_id"/>
+                                    <field name="api_url" placeholder="http://localhost:3000"/>
+                                    <field name="account_id" placeholder="TSTDRV123456"/>
                                 </group>
                                 <group string="OAuth Credentials">
-                                    <field name="consumer_key" password="True"/>
-                                    <field name="consumer_secret" password="True"/>
-                                    <field name="token_id" password="True"/>
-                                    <field name="token_secret" password="True"/>
-                                </group>
-                            </group>
-                            <group>
-                                <group string="Timeout Settings">
-                                    <field name="connection_timeout"/>
-                                    <field name="request_timeout"/>
+                                    <field name="consumer_key" password="True" placeholder="Consumer Key"/>
+                                    <field name="consumer_secret" password="True" placeholder="Consumer Secret"/>
+                                    <field name="token_id" password="True" placeholder="Token ID"/>
+                                    <field name="token_secret" password="True" placeholder="Token Secret"/>
                                 </group>
                             </group>
                         </page>
 
-                        <page string="Sync Settings" name="sync_settings">
+                        <page string="NetSuite Configuration" name="netsuite_config">
+                            <field name="netsuite_config" invisible="1"/>
                             <group>
-                                <group string="Sync Mode">
-                                    <field name="sync_mode" widget="radio"/>
-                                    <field name="enable_manual_sync"/>
-                                    <field name="enable_auto_sync"/>
+                                <field name="last_config_fetch" readonly="1"/>
+                            </group>
+                            
+                            <div class="alert alert-info" role="alert" invisible="netsuite_config">
+                                <p><strong>No Configuration Loaded</strong></p>
+                                <p>Click the <strong>"Fetch Configuration"</strong> button above to retrieve settings from NetSuite.</p>
+                            </div>
+                            
+                            <group invisible="not netsuite_config">
+                                <group string="Retry &amp; Error Handling">
+                                    <field name="config_retry_enabled" readonly="1"/>
+                                    <field name="config_max_retries" readonly="1"/>
+                                    <field name="config_retry_delay" readonly="1"/>
+                                    <field name="config_send_email" readonly="1"/>
+                                    <field name="config_notification_email" readonly="1"/>
                                 </group>
-                                <group string="Sync Triggers">
-                                    <field name="sync_on_order_confirm"/>
-                                    <field name="sync_on_payment"/>
+                                
+                                <group string="Sync Settings">
+                                    <field name="config_batch_size" readonly="1"/>
+                                    <field name="config_hourly_sync_enabled" readonly="1"/>
+                                    <field name="config_end_of_day_sync_enabled" readonly="1"/>
+                                    <field name="config_end_of_day_sync_time" readonly="1"/>
+                                    <field name="config_sync_on_invoice_confirm" readonly="1"/>
+                                </group>
+                                
+                                <group string="Logging &amp; Debugging">
+                                    <field name="config_debug_logging" readonly="1"/>
+                                    <field name="config_log_retention_days" readonly="1"/>
+                                </group>
+                                
+                                <group string="Connection Settings">
+                                    <field name="config_connection_timeout" readonly="1"/>
+                                    <field name="config_request_timeout" readonly="1"/>
                                 </group>
                             </group>
-
-                            <group string="Batch Configuration" invisible="sync_mode != 'batch'">
-                                <group>
-                                    <field name="batch_size"/>
-                                    <field name="batch_schedule_time"/>
-                                </group>
-                            </group>
-                        </page>
-
-                        <page string="Retry &amp; Error Handling" name="retry">
-                            <group>
-                                <group string="Retry Configuration">
-                                    <field name="enable_retry"/>
-                                    <field name="max_retry_attempts" invisible="not enable_retry"/>
-                                    <field name="retry_delay_minutes" invisible="not enable_retry"/>
-                                </group>
-                            </group>
-                        </page>
-
-                        <page string="Logging &amp; Debug" name="logging">
-                            <group>
-                                <group>
-                                    <field name="enable_debug_logging"/>
-                                    <field name="log_payload"/>
-                                </group>
-                            </group>
+                            
+                            <div class="alert alert-warning" role="alert" invisible="not netsuite_config">
+                                <p><strong>Note:</strong> All these settings are controlled by NetSuite and cannot be changed from Odoo.</p>
+                                <p>To modify these values, update the configuration record in NetSuite and click <strong>"Fetch Configuration"</strong> again.</p>
+                            </div>
                         </page>
                     </notebook>
                 </sheet>
@@ -108,11 +97,9 @@
         <field name="arch" type="xml">
             <tree string="NetSuite Configurations">
                 <field name="name"/>
-                <field name="sync_mode"/>
                 <field name="active"/>
-                <field name="total_synced"/>
-                <field name="total_failed"/>
-                <field name="last_sync_date"/>
+                <field name="api_url"/>
+                <field name="last_config_fetch"/>
             </tree>
         </field>
     </record>
@@ -127,8 +114,8 @@
                 Configure NetSuite Integration
             </p>
             <p>
-                Set up connection settings, sync modes, and operational parameters
-                for integrating Odoo POS with NetSuite.
+                Set up connection credentials for NetSuite integration.
+                All business logic and sync settings are controlled by NetSuite.
             </p>
         </field>
     </record>

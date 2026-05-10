@@ -8,17 +8,7 @@
         <field name="inherit_id" ref="point_of_sale.view_pos_pos_form"/>
         <field name="arch" type="xml">
 
-            <xpath expr="//header" position="inside">
-                <button name="action_sync_to_netsuite" string="Sync to NetSuite" type="object"
-                        class="btn-primary" invisible="netsuite_sync_status in ['synced', 'queued']"/>
-                <button name="action_force_resync" string="Force Resync" type="object"
-                        class="btn-warning" invisible="netsuite_sync_status != 'synced'"
-                        groups="netsuite_pos_integration.group_netsuite_manager"/>
-                <button name="action_view_netsuite_logs" string="View Sync Logs" type="object"
-                        class="btn-secondary" invisible="netsuite_sync_status == 'not_synced'"/>
-                <button name="action_view_sync_queue" string="View Queue" type="object"
-                        class="btn-secondary" invisible="netsuite_sync_status == 'not_synced'"/>
-            </xpath>
+
 
             <xpath expr="//sheet/group" position="after">
                 <group name="netsuite_sync" string="NetSuite Sync Information">
@@ -85,6 +75,7 @@
 if records:
     action = records.action_sync_to_netsuite()
         </field>
+        <field name="groups_id" eval="[(4, ref('netsuite_pos_integration.group_netsuite_user'))]"/>
     </record>
 
 </odoo>
