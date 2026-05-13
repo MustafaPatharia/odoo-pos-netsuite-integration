@@ -1,0 +1,26 @@
+flowchart LR
+    subgraph Input["Input Data"]
+        A1[Order 1<br/>Product A: 5 qty<br/>Product B: 3 qty]
+        A2[Order 2<br/>Product A: 10 qty<br/>Product C: 2 qty]
+        A3[Order 3<br/>Product A: 8 qty<br/>Product B: 5 qty]
+    end
+    
+    subgraph Process["Consolidation Logic"]
+        B1[Group by<br/>Shop: Downtown<br/>Date: 2026-05-12]
+        B2[Aggregate Lines:<br/>Product A: 23 qty<br/>Product B: 8 qty<br/>Product C: 2 qty]
+        B3[Calculate Totals:<br/>Weighted Avg Price<br/>Tax Summary<br/>Payment Summary]
+    end
+    
+    subgraph Output["NetSuite Payload"]
+        C1[Single Invoice<br/>3 Line Items<br/>Total: $X,XXX.XX]
+    end
+    
+    A1 --> B1
+    A2 --> B1
+    A3 --> B1
+    B1 --> B2
+    B2 --> B3
+    B3 --> C1
+    
+    style B2 fill:#d4edda
+    style C1 fill:#fff4e1

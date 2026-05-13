@@ -1,0 +1,85 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+    
+    <!-- Product Template Tree View with NetSuite Sync Button -->
+    <record id="view_product_template_tree_netsuite" model="ir.ui.view">
+        <field name="name">product.template.tree.netsuite</field>
+        <field name="model">product.template</field>
+        <field name="inherit_id" ref="product.product_template_tree_view"/>
+        <field name="arch" type="xml">
+            <xpath expr="//tree" position="attributes">
+                <attribute name="decoration-success">x_netsuite_sync_status == 'synced'</attribute>
+                <attribute name="decoration-warning">x_netsuite_sync_status == 'pending'</attribute>
+                <attribute name="decoration-danger">x_netsuite_sync_status == 'error'</attribute>
+            </xpath>
+            <xpath expr="//field[@name='default_code']" position="after">
+                <field name="x_netsuite_id" optional="show"/>
+                <field name="x_netsuite_sync_status" optional="show"/>
+                <field name="x_netsuite_last_sync" optional="hide"/>
+            </xpath>
+        </field>
+    </record>
+    
+    <!-- Product Template Form View - Add NetSuite Tab -->
+    <record id="view_product_template_form_netsuite" model="ir.ui.view">
+        <field name="name">product.template.form.netsuite</field>
+        <field name="model">product.template</field>
+        <field name="inherit_id" ref="product.product_template_only_form_view"/>
+        <field name="arch" type="xml">
+            <xpath expr="//notebook" position="inside">
+                <page string="NetSuite" name="netsuite_info">
+                    <group>
+                        <group string="NetSuite Information">
+                            <field name="x_netsuite_id" readonly="1"/>
+                            <field name="x_netsuite_item_id" readonly="1"/>
+                            <field name="x_netsuite_sync_status"/>
+                            <field name="x_netsuite_last_sync" readonly="1"/>
+                        </group>
+                        <group string="Actions">
+                            <button name="action_sync_from_netsuite" 
+                                    string="Sync from NetSuite" 
+                                    type="object" 
+                                    class="btn-primary"
+                                    invisible="not x_netsuite_id"/>
+                        </group>
+                    </group>
+                </page>
+            </xpath>
+        </field>
+    </record>
+    
+    <!-- Action to Sync All Products from NetSuite -->
+    <record id="action_sync_all_products_from_netsuite" model="ir.actions.server">
+        <field name="name">Sync All Products from NetSuite</field>
+        <field name="model_id" ref="product.model_product_template"/>
+        <field name="binding_model_id" ref="product.model_product_template"/>
+        <field name="binding_view_types">list</field>
+        <field name="state">code</field>
+        <field name="code">
+result = env['netsuite.product.sync'].sync_products_from_netsuite(limit=100)
+if result.get('success'):
+    action = {
+        'type': 'ir.actions.client',
+        'tag': 'display_notification',
+        'params': {
+            'title': 'Product Sync Complete',
+            'message': f"Created: {result['created']}, Updated: {result['updated']}, Failed: {result['failed']}",
+            'type': 'success' if result['failed'] == 0 else 'warning',
+            'sticky': False,
+        }
+    }
+else:
+    action = {
+        'type': 'ir.actions.client',
+        'tag': 'display_notification',
+        'params': {
+            'title': 'Product Sync Failed',
+            'message': '\n'.join(result.get('errors', ['Unknown error'])),
+            'type': 'danger',
+            'sticky': True,
+        }
+    }
+        </field>
+    </record>
+    
+</odoo>

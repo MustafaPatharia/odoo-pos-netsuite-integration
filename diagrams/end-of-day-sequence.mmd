@@ -1,0 +1,34 @@
+sequenceDiagram
+    participant Cron as Odoo Cron<br/>(00:00)
+    participant Service as Consolidation<br/>Service
+    participant DB as Odoo<br/>Database
+    participant API as API<br/>Client
+    participant NS as NetSuite<br/>RESTlet
+    participant Log as Sync<br/>Logger
+    
+    Cron->>Service: cron_sync_end_of_day_orders()
+    Service->>DB: Fetch yesterday's paid orders
+    DB-->>Service: 150 orders from 5 shops
+    
+    loop For Each Shop
+        Service->>Service: Filter orders for shop
+        Service->>Service: Aggregate line items
+        Service->>Service: Calculate totals
+        Service->>API: create_consolidated_invoice(payload)
+        API->>NS: POST /receiveConsolidatedInvoice
+        
+        alt Success
+            NS-->>API: 200 OK {invoice_id, tran_id}
+            API-->>Service: Success response
+            Service->>DB: Mark 30 orders as synced
+            Service->>Log: Log success
+        else Failure
+            NS-->>API: 400/500 Error
+            API-->>Service: Error response
+            Service->>DB: Mark orders as failed
+            Service->>Log: Log error
+            Service->>Service: Schedule retry (if enabled)
+        end
+    end
+    
+    Service-->>Cron: Summary: 5 synced, 0 failed

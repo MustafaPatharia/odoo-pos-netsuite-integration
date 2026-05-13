@@ -1,0 +1,319 @@
+# -*- coding: utf-8 -*-
+
+from odoo import models, api, fields, _
+from odoo.exceptions import UserError
+import requests
+import json
+import logging
+from datetime import datetime
+
+_logger = logging.getLogger(__name__)
+
+
+class NetSuiteProductSync(models.AbstractModel):
+    """
+    Service for syncing Products/Items from NetSuite to Odoo
+    Uses NetSuite REST API: /services/rest/record/v1/inventoryItem
+    """
+    _name = 'netsuite.product.sync'
+    _description = 'NetSuite Product Sync Service'
+
+    @api.model
+    def sync_products_from_netsuite(self, limit=None, product_ids=None):
+        """
+        Fetch products/items from NetSuite and create/update in Odoo
+        
+        Args:
+            limit: Maximum number of products to fetch (for testing)
+            product_ids: List of specific NetSuite item IDs to sync
+            
+        Returns:
+            dict: {
+                'success': True/False,
+                'total_fetched': 10,
+                'created': 5,
+                'updated': 3,
+                'failed': 2,
+                'errors': [...]
+            }
+        """
+        config = self.env['netsuite.config'].get_active_config()
+        
+        if not config:
+            raise UserError(_('No active NetSuite configuration found'))
+        
+        # Log sync start
+        sync_log = self.env['netsuite.sync.log'].create({
+            'config_id': config.id,
+            'sync_type': 'product_import',
+            'status': 'processing',
+            'start_time': fields.Datetime.now(),
+        })
+        
+        results = {
+            'success': False,
+            'total_fetched': 0,
+            'created': 0,
+            'updated': 0,
+            'failed': 0,
+            'errors': []
+        }
+        
+        try:
+            # Fetch products from NetSuite
+            products_data = self._fetch_products_from_netsuite(config, limit, product_ids)
+            
+            if not products_data:
+                sync_log.write({
+                    'status': 'failed',
+                    'end_time': fields.Datetime.now(),
+                    'error_message': 'No products returned from NetSuite'
+                })
+                results['errors'].append('No products returned from NetSuite')
+                return results
+            
+            results['total_fetched'] = len(products_data)
+            
+            # Process each product
+            ProductTemplate = self.env['product.template']
+            
+            for product_data in products_data:
+                try:
+                    # Extract product fields
+                    netsuite_id = str(product_data.get('id'))
+                    item_id = product_data.get('itemid')  # NetSuite item ID (SKU)
+                    display_name = product_data.get('displayname')
+                    description = product_data.get('description', '')
+                    base_price = float(product_data.get('baseprice', 0.0))
+                    cost_estimate = float(product_data.get('cost', 0.0))
+                    is_inactive = product_data.get('isinactive', False)
+                    
+                    # Search for existing product by NetSuite ID
+                    existing_product = ProductTemplate.search([
+                        ('x_netsuite_id', '=', netsuite_id)
+                    ], limit=1)
+                    
+                    # Prepare product values
+                    product_vals = {
+                        'name': display_name or item_id,
+                        'default_code': item_id,
+                        'description': description,
+                        'list_price': base_price,
+                        'standard_price': cost_estimate,
+                        'type': 'product',  # Storable product
+                        'active': not is_inactive,
+                        'x_netsuite_id': netsuite_id,
+                        'x_netsuite_last_sync': fields.Datetime.now(),
+                    }
+                    
+                    if existing_product:
+                        # Update existing product
+                        existing_product.write(product_vals)
+                        results['updated'] += 1
+                        _logger.info(f'Updated product: {display_name} (NS ID: {netsuite_id})')
+                    else:
+                        # Create new product
+                        ProductTemplate.create(product_vals)
+                        results['created'] += 1
+                        _logger.info(f'Created product: {display_name} (NS ID: {netsuite_id})')
+                    
+                except Exception as e:
+                    results['failed'] += 1
+                    error_msg = f"Error syncing product {product_data.get('itemid', 'Unknown')}: {str(e)}"
+                    results['errors'].append(error_msg)
+                    _logger.error(error_msg)
+            
+            # Update sync log
+            results['success'] = results['failed'] == 0
+            sync_log.write({
+                'status': 'success' if results['success'] else 'partial',
+                'end_time': fields.Datetime.now(),
+                'records_processed': results['total_fetched'],
+                'records_success': results['created'] + results['updated'],
+                'records_failed': results['failed'],
+                'error_message': '\n'.join(results['errors']) if results['errors'] else None,
+                'response_data': json.dumps(results, indent=2)
+            })
+            
+            return results
+            
+        except Exception as e:
+            error_msg = f'Product sync failed: {str(e)}'
+            _logger.error(error_msg, exc_info=True)
+            
+            sync_log.write({
+                'status': 'failed',
+                'end_time': fields.Datetime.now(),
+                'error_message': error_msg
+            })
+            
+            results['errors'].append(error_msg)
+            return results
+    
+    def _fetch_products_from_netsuite(self, config, limit=None, product_ids=None):
+        """
+        Fetch products from NetSuite REST API
+        
+        Args:
+            config: netsuite.config record
+            limit: Max number of records to fetch
+            product_ids: List of specific NetSuite IDs
+            
+        Returns:
+            list: List of product dictionaries
+        """
+        try:
+            # For mock server - use simple GET endpoint
+            # For real NetSuite - use REST Record API
+            
+            if 'localhost' in config.api_url or 'host.docker.internal' in config.api_url:
+                # Mock server endpoint
+                url = f"{config.api_url.rstrip('/')}/api/items"
+                params = {}
+                if limit:
+                    params['limit'] = limit
+                if product_ids:
+                    params['ids'] = ','.join(str(id) for id in product_ids)
+            else:
+                # Real NetSuite REST API
+                # /services/rest/record/v1/inventoryItem?limit=100
+                url = f"{config.api_url.rstrip('/')}/services/rest/record/v1/inventoryItem"
+                params = {
+                    'limit': limit or 100
+                }
+                if product_ids:
+                    # For specific IDs, make multiple requests (NetSuite limitation)
+                    # For now, we'll just fetch all and filter
+                    pass
+            
+            headers = self._get_netsuite_headers(config)
+            
+            timeout = (
+                config.config_connection_timeout or 30,
+                config.config_request_timeout or 120
+            )
+            
+            response = requests.get(url, headers=headers, params=params, timeout=timeout)
+            response.raise_for_status()
+            
+            data = response.json()
+            
+            # Handle different response structures
+            if isinstance(data, dict):
+                # Mock server or wrapped response
+                products = data.get('items', data.get('data', []))
+            elif isinstance(data, list):
+                # Direct array response
+                products = data
+            else:
+                products = []
+            
+            _logger.info(f'Fetched {len(products)} products from NetSuite')
+            return products
+            
+        except requests.exceptions.Timeout:
+            raise UserError(_('NetSuite API request timed out. Please try again.'))
+        except requests.exceptions.ConnectionError:
+            raise UserError(_('Could not connect to NetSuite API. Check your network connection.'))
+        except requests.exceptions.HTTPError as e:
+            raise UserError(_('NetSuite API error: %s') % str(e))
+        except Exception as e:
+            raise UserError(_('Error fetching products from NetSuite: %s') % str(e))
+    
+    def _get_netsuite_headers(self, config):
+        """
+        Generate HTTP headers for NetSuite REST API request
+        
+        Args:
+            config: netsuite.config record
+            
+        Returns:
+            dict: HTTP headers
+        """
+        headers = {
+            'Content-Type': 'application/json',
+            'Accept': 'application/json',
+        }
+        
+        # For mock server - simple auth
+        if 'localhost' in config.api_url or 'host.docker.internal' in config.api_url:
+            headers['Authorization'] = f'Bearer mock-token'
+            return headers
+        
+        # For real NetSuite - OAuth 1.0 (TBA)
+        # In production, implement proper OAuth 1.0 signing here
+        # For now, placeholder
+        if config.consumer_key:
+            headers['Authorization'] = f'OAuth realm="{config.account_id}"'
+            # TODO: Add proper OAuth 1.0 signature
+        
+        return headers
+
+
+class ProductTemplate(models.Model):
+    """
+    Extend product.template to add NetSuite sync fields
+    """
+    _inherit = 'product.template'
+    
+    x_netsuite_id = fields.Char(
+        string='NetSuite ID',
+        readonly=True,
+        copy=False,
+        help='NetSuite Internal ID',
+        index=True
+    )
+    
+    x_netsuite_item_id = fields.Char(
+        string='NetSuite Item ID',
+        readonly=True,
+        copy=False,
+        help='NetSuite Item ID (external reference)'
+    )
+    
+    x_netsuite_last_sync = fields.Datetime(
+        string='Last Synced from NetSuite',
+        readonly=True,
+        copy=False
+    )
+    
+    x_netsuite_sync_status = fields.Selection([
+        ('synced', 'Synced'),
+        ('pending', 'Pending'),
+        ('error', 'Error'),
+    ], string='NetSuite Sync Status', default='pending', copy=False)
+    
+    def action_sync_from_netsuite(self):
+        """
+        Manual sync button for products (fetch from NetSuite)
+        """
+        netsuite_ids = self.mapped('x_netsuite_id')
+        netsuite_ids = [ns_id for ns_id in netsuite_ids if ns_id]
+        
+        if not netsuite_ids:
+            raise UserError(_('No NetSuite IDs found for selected products'))
+        
+        result = self.env['netsuite.product.sync'].sync_products_from_netsuite(
+            product_ids=netsuite_ids
+        )
+        
+        if result['success']:
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': _('Sync Complete'),
+                    'message': _(f"Updated {result['updated']} products from NetSuite"),
+                    'type': 'success',
+                }
+            }
+        else:
+            return {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': _('Sync Completed with Errors'),
+                    'message': _(f"Updated {result['updated']}, Failed {result['failed']}"),
+                    'type': 'warning',
+                }
+            }

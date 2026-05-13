@@ -1,0 +1,41 @@
+flowchart TB
+    subgraph Odoo["ODOO POS SYSTEM"]
+        A[POS Transaction] --> B{Configuration Check}
+        B -->|Real-Time| C[Immediate Sync]
+        B -->|Scheduled| D[Queue for EOD]
+        B -->|Manual| E[Wait for User Action]
+
+        C --> F[API Client]
+        D --> G[Cron Job 00:00]
+        E --> H[Manual Sync Wizard]
+
+        G --> I[Consolidation Service]
+        H --> I
+
+        I --> J[Group by Shop+Date]
+        J --> K[Aggregate Line Items]
+        K --> F
+
+        F --> L[HTTP POST]
+    end
+
+    subgraph NetSuite["NETSUITE ERP"]
+        M --> N{Validate Payload}
+        N -->|Invalid| O[Return Error]
+        N -->|Valid| P[Check Duplicates]
+
+        P --> Q[Create Invoice]
+        Q --> R[Create Payments]
+        R --> S[Return Success]
+    end
+
+    O -.-> T[Log Error Retry Logic]
+    S -.-> U[Update Sync Status]
+
+    T --> F
+    U --> V[Mark Orders as Synced]
+
+    style A fill:#e1f5ff
+    style M fill:#fff4e1
+    style F fill:#d4edda
+    style I fill:#d4edda

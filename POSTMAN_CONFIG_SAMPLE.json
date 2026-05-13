@@ -1,0 +1,69 @@
+{
+  "db": "odoo_netsuite",
+  "login": "admin",
+  "password": "admin",
+  "configuration": {
+    "integration_mode": "scheduled",
+    "realtime_settings": {
+      "enabled": false,
+      "sync_on_order_confirmed": false,
+      "sync_on_invoice_validated": false,
+      "immediate_payment_sync": false
+    },
+    "scheduled_settings": {
+      "enabled": true,
+      "order_sync_time": "00:00",
+      "invoice_sync_time": "00:00",
+      "product_sync_frequency": "hourly",
+      "product_sync_hour_interval": 1
+    },
+    "manual_execution": {
+      "enabled": true,
+      "allow_retry_failed": true,
+      "allow_test_connection": true
+    },
+    "retry_policy": {
+      "enabled": true,
+      "max_retries": 3,
+      "initial_delay_minutes": 5,
+      "use_exponential_backoff": true,
+      "backoff_multiplier": 2
+    },
+    "batch_processing": {
+      "order_batch_size": 100,
+      "invoice_batch_size": 100,
+      "product_batch_size": 50
+    },
+    "notification": {
+      "send_email_on_failure": true,
+      "send_email_on_success": false,
+      "notification_recipients": [
+        "admin@example.com",
+        "integration@example.com"
+      ]
+    },
+    "logging": {
+      "enable_debug_logging": false,
+      "log_retention_days": 90,
+      "log_request_payload": true,
+      "log_response_payload": true
+    },
+    "api_settings": {
+      "connection_timeout_seconds": 30,
+      "request_timeout_seconds": 120,
+      "api_rate_limit_per_minute": 60
+    },
+    "consolidation_rules": {
+      "consolidate_orders_per_shop_per_day": true,
+      "consolidate_invoices_per_shop_per_day": true,
+      "aggregate_line_items": true,
+      "group_by_product": true
+    }
+  },
+  "metadata": {
+    "config_version": "1.0",
+    "last_updated_by": "NetSuite Admin",
+    "last_updated_at": "2026-05-13T19:30:00Z",
+    "netsuite_environment": "sandbox"
+  }
+}
