@@ -5,3 +5,7 @@ access_netsuite_sync_queue_user,netsuite.sync.queue.user,model_netsuite_sync_que
 access_netsuite_sync_queue_manager,netsuite.sync.queue.manager,model_netsuite_sync_queue,group_netsuite_manager,1,1,1,1
 access_netsuite_sync_log_user,netsuite.sync.log.user,model_netsuite_sync_log,group_netsuite_user,1,0,0,0
 access_netsuite_sync_log_manager,netsuite.sync.log.manager,model_netsuite_sync_log,group_netsuite_manager,1,1,1,0
+access_netsuite_subsidiary_mapping_user,netsuite.subsidiary.mapping.user,model_netsuite_subsidiary_mapping,group_netsuite_user,1,0,0,0
+access_netsuite_subsidiary_mapping_manager,netsuite.subsidiary.mapping.manager,model_netsuite_subsidiary_mapping,group_netsuite_manager,1,1,1,1
+access_netsuite_payment_method_mapping_user,netsuite.payment.method.mapping.user,model_netsuite_payment_method_mapping,group_netsuite_user,1,0,0,0
+access_netsuite_payment_method_mapping_manager,netsuite.payment.method.mapping.manager,model_netsuite_payment_method_mapping,group_netsuite_manager,1,1,1,1

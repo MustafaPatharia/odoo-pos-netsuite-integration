@@ -2,19 +2,17 @@
 <odoo>
     <data noupdate="1">
 
-        <!-- ============================================ -->
-        <!-- CRON JOB 1: HOURLY ITEM SYNC                -->
-        <!-- Syncs all products/items to NetSuite        -->
-        <!-- ============================================ -->
-        <record id="cron_hourly_item_sync" model="ir.cron">
-            <field name="name">NetSuite: Hourly Item Sync</field>
-            <field name="model_id" ref="product.model_product_product"/>
+        <!-- ========================================== -->
+        <!-- CRON 1: Hourly Product Sync from NetSuite -->
+        <!-- ========================================== -->
+        <record id="ir_cron_netsuite_product_sync" model="ir.cron">
+            <field name="name">NetSuite: Fetch Products Hourly</field>
+            <field name="model_id" ref="model_netsuite_product_sync"/>
             <field name="state">code</field>
             <field name="code">
-# Sync all products/items to NetSuite hourly
-config = env['netsuite.config'].get_active_config()
-if config:
-    env['netsuite.api.client'].sync_items_hourly()
+config = env['netsuite.config'].search([('active', '=', True)], limit=1)
+if config and config.config_hourly_sync_enabled:
+    result = model.sync_products_from_netsuite(limit=100)
             </field>
             <field name="interval_number">1</field>
             <field name="interval_type">hours</field>
@@ -22,26 +20,43 @@ if config:
             <field name="active" eval="True"/>
             <field name="doall" eval="False"/>
         </record>
-
-        <!-- ============================================ -->
-        <!-- CRON JOB 2: END OF DAY INVOICE SYNC         -->
-        <!-- Syncs ALL invoices from today in ONE batch  -->
-        <!-- Runs at 11:59 PM daily                      -->
-        <!-- ============================================ -->
-        <record id="cron_end_of_day_invoice_sync" model="ir.cron">
-            <field name="name">NetSuite: End of Day Invoice Sync</field>
-            <field name="model_id" ref="point_of_sale.model_pos_order"/>
+        
+        <!-- ========================================== -->
+        <!-- CRON 2: Daily Consolidated Order Sync (Midnight) -->
+        <!-- ========================================== -->
+        <record id="ir_cron_netsuite_order_sync" model="ir.cron">
+            <field name="name">NetSuite: Sync Consolidated Orders Daily</field>
+            <field name="model_id" ref="model_netsuite_consolidated_sync"/>
             <field name="state">code</field>
             <field name="code">
-# Sync all finalized invoices from today in ONE batch
-config = env['netsuite.config'].get_active_config()
-if config:
-    env['netsuite.api.client'].sync_end_of_day_invoices()
+config = env['netsuite.config'].search([('active', '=', True)], limit=1)
+if config and config.config_integration_mode == 'scheduled':
+    result = model.sync_consolidated_orders()
             </field>
             <field name="interval_number">1</field>
             <field name="interval_type">days</field>
-            <field name="nextcall" eval="(DateTime.now() + timedelta(days=1)).replace(hour=23, minute=59, second=0)"/>
             <field name="numbercall">-1</field>
+            <field name="nextcall" eval="(DateTime.now() + timedelta(days=1)).replace(hour=0, minute=5, second=0)"/>
+            <field name="active" eval="True"/>
+            <field name="doall" eval="False"/>
+        </record>
+        
+        <!-- ========================================== -->
+        <!-- CRON 3: Daily Consolidated Invoice Sync (Midnight) -->
+        <!-- ========================================== -->
+        <record id="ir_cron_netsuite_invoice_sync" model="ir.cron">
+            <field name="name">NetSuite: Sync Consolidated Invoices Daily</field>
+            <field name="model_id" ref="model_netsuite_consolidated_sync"/>
+            <field name="state">code</field>
+            <field name="code">
+config = env['netsuite.config'].search([('active', '=', True)], limit=1)
+if config and config.config_integration_mode == 'scheduled':
+    result = model.sync_consolidated_invoices()
+            </field>
+            <field name="interval_number">1</field>
+            <field name="interval_type">days</field>
+            <field name="numbercall">-1</field>
+            <field name="nextcall" eval="(DateTime.now() + timedelta(days=1)).replace(hour=0, minute=10, second=0)"/>
             <field name="active" eval="True"/>
             <field name="doall" eval="False"/>
         </record>

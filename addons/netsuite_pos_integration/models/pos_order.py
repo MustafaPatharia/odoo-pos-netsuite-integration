@@ -54,6 +54,21 @@ class PosOrder(models.Model):
         copy=False
     )
 
+    # Invoice sync fields (for consolidated invoice sync)
+    x_netsuite_invoice_id = fields.Char(
+        string='NetSuite Invoice ID',
+        readonly=True,
+        copy=False,
+        help='NetSuite Internal ID of the consolidated invoice'
+    )
+
+    x_netsuite_invoice_sync_date = fields.Datetime(
+        string='Invoice Sync Date',
+        readonly=True,
+        copy=False,
+        help='Date when this order was synced as part of a consolidated invoice'
+    )
+
     def action_sync_to_netsuite(self):
         """
         Batch sync to NetSuite - Creates ONE consolidated invoice per shop per day

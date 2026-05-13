@@ -58,3 +58,8 @@ Thumbs.db
 # Environment
 .env
 .env.local
+
+STATEMENT_OF_WORK.md
+
+*.png
+*.docx

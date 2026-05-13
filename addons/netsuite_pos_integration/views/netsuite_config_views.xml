@@ -9,7 +9,6 @@
             <form string="NetSuite Configuration">
                 <header>
                     <button name="action_test_connection" string="Test Connection" type="object" class="btn-primary"/>
-                    <button name="action_fetch_config" string="Fetch Configuration from NetSuite" type="object" class="btn-primary"/>
                     <button name="action_view_sync_logs" string="View Sync Logs" type="object" class="btn-secondary"/>
                 </header>
                 <sheet>
@@ -45,40 +44,67 @@
                             <group>
                                 <field name="last_config_fetch" readonly="1"/>
                             </group>
-                            
+
                             <div class="alert alert-info" role="alert" invisible="netsuite_config">
                                 <p><strong>No Configuration Loaded</strong></p>
-                                <p>Click the <strong>"Fetch Configuration"</strong> button above to retrieve settings from NetSuite.</p>
+                                <p>Configuration will be automatically received from NetSuite via POST API.</p>
+                                <p>NetSuite will send updates to: <code>/api/netsuite/config/update</code></p>
                             </div>
-                            
+
                             <group invisible="not netsuite_config">
-                                <group string="Retry &amp; Error Handling">
+                                <group string="Integration Mode">
+                                    <field name="config_integration_mode" readonly="1"/>
+                                    <field name="config_manual_execution_enabled" readonly="1"/>
+                                </group>
+
+                                <group string="Retry Policy">
                                     <field name="config_retry_enabled" readonly="1"/>
                                     <field name="config_max_retries" readonly="1"/>
                                     <field name="config_retry_delay" readonly="1"/>
-                                    <field name="config_send_email" readonly="1"/>
-                                    <field name="config_notification_email" readonly="1"/>
+                                    <field name="config_use_exponential_backoff" readonly="1"/>
+                                    <field name="config_backoff_multiplier" readonly="1"/>
                                 </group>
-                                
-                                <group string="Sync Settings">
-                                    <field name="config_batch_size" readonly="1"/>
+
+                                <group string="Scheduled Sync Settings">
                                     <field name="config_hourly_sync_enabled" readonly="1"/>
-                                    <field name="config_end_of_day_sync_enabled" readonly="1"/>
-                                    <field name="config_end_of_day_sync_time" readonly="1"/>
-                                    <field name="config_sync_on_invoice_confirm" readonly="1"/>
+                                    <field name="config_product_sync_frequency" readonly="1"/>
+                                    <field name="config_order_sync_time" readonly="1"/>
+                                    <field name="config_invoice_sync_time" readonly="1"/>
                                 </group>
-                                
+
+                                <group string="Batch Processing">
+                                    <field name="config_order_batch_size" readonly="1"/>
+                                    <field name="config_invoice_batch_size" readonly="1"/>
+                                    <field name="config_product_batch_size" readonly="1"/>
+                                </group>
+
+                                <group string="Notifications">
+                                    <field name="config_send_email_on_failure" readonly="1"/>
+                                    <field name="config_send_email_on_success" readonly="1"/>
+                                    <field name="config_notification_recipients" readonly="1" widget="text"/>
+                                </group>
+
                                 <group string="Logging &amp; Debugging">
                                     <field name="config_debug_logging" readonly="1"/>
                                     <field name="config_log_retention_days" readonly="1"/>
+                                    <field name="config_log_request_payload" readonly="1"/>
+                                    <field name="config_log_response_payload" readonly="1"/>
                                 </group>
-                                
+
                                 <group string="Connection Settings">
                                     <field name="config_connection_timeout" readonly="1"/>
                                     <field name="config_request_timeout" readonly="1"/>
+                                    <field name="config_api_rate_limit" readonly="1"/>
+                                </group>
+
+                                <group string="Consolidation Rules">
+                                    <field name="config_consolidate_orders" readonly="1"/>
+                                    <field name="config_consolidate_invoices" readonly="1"/>
+                                    <field name="config_aggregate_line_items" readonly="1"/>
+                                    <field name="config_group_by_product" readonly="1"/>
                                 </group>
                             </group>
-                            
+
                             <div class="alert alert-warning" role="alert" invisible="not netsuite_config">
                                 <p><strong>Note:</strong> All these settings are controlled by NetSuite and cannot be changed from Odoo.</p>
                                 <p>To modify these values, update the configuration record in NetSuite and click <strong>"Fetch Configuration"</strong> again.</p>

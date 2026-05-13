@@ -53,8 +53,10 @@ Technical Highlights:
 
         # Views
         'views/netsuite_config_views.xml',
+        'views/netsuite_mapping_views.xml',
         'views/netsuite_sync_queue_views.xml',
         'views/netsuite_sync_log_views.xml',
+        'views/product_views.xml',
         'views/pos_order_views.xml',
         'views/netsuite_menu.xml',
     ],
