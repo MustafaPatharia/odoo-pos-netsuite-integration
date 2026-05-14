@@ -5,7 +5,7 @@
 
 **Project Name**: Odoo Point of Sale to NetSuite ERP Integration
 **Date**: May 13, 2026
-**Classification**: Technical Implementation Specification
+**Classification**: Technical Design Specification
 
 ---
 
@@ -36,7 +36,7 @@ This technical documentation provides comprehensive implementation details for t
 
 ### 1.1 Project Overview
 
-The Odoo POS ↔ NetSuite Integration project establishes a bidirectional, configurable enterprise integration solution between Odoo Point of Sale (POS) system and Oracle NetSuite ERP platform. This integration enables automated synchronization of transactional and master data while supporting multiple execution modes to accommodate diverse business requirements.
+The Odoo POS ↔ NetSuite Integration project will establish a bidirectional, configurable enterprise integration solution between Odoo Point of Sale (POS) system and Oracle NetSuite ERP platform. This integration will enable automated synchronization of transactional and master data while supporting multiple execution modes to accommodate diverse business requirements.
 
 ### 1.2 Business Objectives
 
@@ -88,13 +88,13 @@ The Odoo POS ↔ NetSuite Integration project establishes a bidirectional, confi
 
 ### 1.5 Technical Architecture Summary
 
-The solution implements a **Client-Server Architecture Pattern** where:
+The solution will implement a **Client-Server Architecture Pattern** where:
 
-- **Odoo (Client)**: "Dumb client" that stores only NetSuite credentials and executes synchronization tasks
-- **NetSuite (Server)**: "Intelligent server" that controls all business logic, retry policies, and configuration
+- **Odoo (Client)**: "Dumb client" that will store only NetSuite credentials and execute synchronization tasks
+- **NetSuite (Server)**: "Intelligent server" that will control all business logic, retry policies, and configuration
 - **Communication**: RESTful API with OAuth 1.0 authentication
 
-This design ensures:
+This design will ensure:
 - Centralized business rule management
 - Simplified Odoo module maintenance
 - Dynamic reconfiguration without code changes
@@ -105,6 +105,8 @@ This design ensures:
 ## 2. System Architecture
 
 ### 2.1 High-Level Architecture
+
+**Proposed System Architecture:**
 
 ![System Architecture Diagram](../diagrams/system_architecture.png){width=40%}
 
@@ -206,7 +208,7 @@ addons/netsuite_pos_integration/
 #### 3.2.1 NetSuite Configuration Model
 
 **Model Name**: `netsuite.config`
-**Purpose**: Central configuration management and credential storage
+**Purpose**: Will provide central configuration management and credential storage
 
 **Key Fields**:
 
@@ -235,6 +237,8 @@ addons/netsuite_pos_integration/
 
 **Key Methods**:
 
+**Proposed Implementation:**
+
 ```python
 @api.model
 def get_active_config():
@@ -250,7 +254,7 @@ def action_sync_products(self):
 #### 3.2.2 POS Order Extension
 
 **Model Name**: `pos.order` (inherited)
-**Purpose**: Track NetSuite sync status for POS orders
+**Purpose**: Will track NetSuite sync status for POS orders
 
 **Additional Fields**:
 
@@ -266,6 +270,8 @@ def action_sync_products(self):
 | `x_netsuite_invoice_sync_date` | Datetime | Invoice sync timestamp |
 
 **Key Methods**:
+
+**Proposed Implementation:**
 
 ```python
 def action_sync_to_netsuite(self):
@@ -288,9 +294,11 @@ def _mark_as_failed(self, error_message):
 
 **Model Name**: `netsuite.consolidated.sync`
 **Type**: Abstract Model (Service)
-**Purpose**: Aggregate and sync consolidated orders/invoices
+**Purpose**: Will aggregate and sync consolidated orders/invoices
 
 **Key Methods**:
+
+**Proposed Implementation:**
 
 ```python
 @api.model
@@ -327,9 +335,11 @@ def _prepare_consolidated_payload(self, warehouse, orders, aggregated_lines, tar
 
 **Model Name**: `netsuite.api.client`
 **Type**: Abstract Model (Service)
-**Purpose**: Handle all HTTP communication with NetSuite
+**Purpose**: Will handle all HTTP communication with NetSuite
 
 **Key Methods**:
+
+**Proposed Implementation:**
 
 ```python
 @api.model
@@ -368,6 +378,8 @@ def create_consolidated_invoice(self, config, invoice_payload):
 
 **Request Flow**:
 
+**Proposed Process:**
+
 1. Retrieve active configuration
 2. Generate OAuth headers (if credentials configured)
 3. Construct full URL from base URL + endpoint
@@ -379,7 +391,7 @@ def create_consolidated_invoice(self, config, invoice_payload):
 #### 3.2.5 Sync Logging Model
 
 **Model Name**: `netsuite.sync.log`
-**Purpose**: Comprehensive audit trail for all sync operations
+**Purpose**: Will provide comprehensive audit trail for all sync operations
 
 **Fields**:
 
@@ -403,7 +415,7 @@ def create_consolidated_invoice(self, config, invoice_payload):
 #### 3.3.1 Subsidiary Mapping
 
 **Model Name**: `netsuite.subsidiary.mapping`
-**Purpose**: Map Odoo shops/warehouses to NetSuite subsidiaries
+**Purpose**: Will map Odoo shops/warehouses to NetSuite subsidiaries
 
 **Fields**:
 
@@ -420,7 +432,7 @@ def create_consolidated_invoice(self, config, invoice_payload):
 #### 3.3.2 Payment Method Mapping
 
 **Model Name**: `netsuite.payment.method.mapping`
-**Purpose**: Map Odoo payment methods to NetSuite payment methods
+**Purpose**: Will map Odoo payment methods to NetSuite payment methods
 
 **Fields**:
 
@@ -442,6 +454,9 @@ def create_consolidated_invoice(self, config, invoice_payload):
 **Method**: `cron_sync_products_from_netsuite`
 
 **Logic**:
+
+**Proposed Implementation:**
+
 1. Fetch active NetSuite configuration
 2. Call NetSuite REST API: `/services/rest/record/v1/inventoryItem`
 3. Parse response and map fields to Odoo products
@@ -468,6 +483,9 @@ def create_consolidated_invoice(self, config, invoice_payload):
 **Method**: `cron_sync_end_of_day_orders`
 
 **Logic**:
+
+**Proposed Implementation:**
+
 1. Calculate target date (previous day)
 2. Fetch all paid POS orders from previous day
 3. Group orders by warehouse/shop
@@ -513,10 +531,10 @@ def create_consolidated_invoice(self, config, invoice_payload):
 **Action**: "Sync to NetSuite" (multi-select action)
 
 **Business Rules**:
-- Cannot sync today's orders (must wait for EOD)
-- Cannot sync already synced orders
-- Groups orders by (shop, date) automatically
-- Creates one consolidated invoice per group
+- Will not allow syncing today's orders (must wait for EOD)
+- Will not allow syncing already synced orders
+- Will group orders by (shop, date) automatically
+- Will create one consolidated invoice per group
 
 **Wizard**: `netsuite.manual.sync.wizard`
 
@@ -533,13 +551,15 @@ def create_consolidated_invoice(self, config, invoice_payload):
 
 ### 3.6 User Interface
 
-**Configuration Views**: Located in `NetSuite → Configuration` menu with forms for API credentials and sync settings.
+**Proposed UI Components:**
 
-**POS Order Extensions**: Additional sync status column, NetSuite ID fields, and batch sync actions in Point of Sale → Orders list view.
+**Configuration Views**: Will be located in `NetSuite → Configuration` menu with forms for API credentials and sync settings.
 
-**Sync Logs**: Comprehensive logging interface under NetSuite → Sync Logs with filters for type, status, and date range.
+**POS Order Extensions**: Will include sync status column, NetSuite ID fields, and batch sync actions in Point of Sale → Orders list view.
 
-**Mapping Views**: Subsidiary and payment method mapping screens under NetSuite → Mappings menu.
+**Sync Logs**: Will provide comprehensive logging interface under NetSuite → Sync Logs with filters for type, status, and date range.
+
+**Mapping Views**: Will include subsidiary and payment method mapping screens under NetSuite → Mappings menu.
 
 ---
 
@@ -710,20 +730,30 @@ password: {user_password}
 
 ### 6.1 System Integration Flow
 
+**Proposed Integration Flow:**
+
 ![POS to NetSuite Sync Flow](../diagrams/pos_netsuite_sync.png){width=75%}
 
 ### 6.2 Consolidated Invoice Generation Flow
+
+**Proposed Consolidation Process:**
 
 ![Order Consolidation Logic](../diagrams/order_consolidation.png){width=75%}
 
 ### 6.3 End of Day Sync Process
 
+**Proposed EOD Sync Workflow:**
+
 ![Order Consolidation Sync Sequence](../diagrams/order_consolidation_sync.png){width=75%}
 
 ### 6.4 Product Sync Flow (Hourly)
+
+**Proposed Product Sync Process:**
 ![Product Sync Flow](../diagrams/netsuite_product_sync.png){width=75%}
 
 ### 6.5 Configuration Update Flow
+
+**Proposed Configuration Sync:**
 ![Netsuite Odoo Config Flow](../diagrams/netsuite_odoo_config_sync.png){width=75%}
 
 ### 6.6 Error Handling and Retry Flow
@@ -780,10 +810,12 @@ The complete configuration JSON schema is defined in `CONFIGURATION_SCHEMA.md`. 
 
 ### 7.2 Configuration Synchronization
 
+**Planned Synchronization Approach:**
+
 **NetSuite → Odoo**:
-- NetSuite pushes configuration changes via POST API
-- Odoo validates and stores JSON
-- Computed fields automatically update
+- NetSuite will push configuration changes via POST API
+- Odoo will validate and store JSON
+- Computed fields will automatically update
 - No Odoo restart required
 
 **Update Mechanism**:
@@ -791,7 +823,10 @@ The complete configuration JSON schema is defined in `CONFIGURATION_SCHEMA.md`. 
 
 ### 7.3 Configuration Validation
 
-**Odoo-Side Validation**:
+**Odoo-Side Validation:**
+
+**Proposed Validation Logic:**
+
 ```python
 def _validate_config_json(self, config_json):
     """Validate NetSuite configuration JSON structure"""
@@ -825,9 +860,9 @@ def _validate_config_json(self, config_json):
 
 ### 8.2 Data Privacy
 
-- OAuth credentials stored in encrypted database fields
-- API responses logged for audit
-- Configuration options for logging sensitive data
+- OAuth credentials will be stored in encrypted database fields
+- API responses will be logged for audit
+- Configuration options will control logging of sensitive data
 
 ---
 
@@ -845,9 +880,11 @@ def _validate_config_json(self, config_json):
 
 ### 9.2 Logging Strategy
 
+**Proposed Logging Approach:**
+
 #### 9.2.1 Sync Log Fields
 
-Every sync operation creates a log entry with:
+Each sync operation will create a log entry with:
 - Request timestamp
 - Request payload (configurable)
 - Response payload (configurable)
@@ -859,7 +896,8 @@ Every sync operation creates a log entry with:
 
 #### 9.2.2 Log Retention
 
-Configurable via:
+**Configuration:**
+
 ```json
 {
   "logging": {
@@ -868,7 +906,7 @@ Configurable via:
 }
 ```
 
-Automated cleanup cron job removes logs older than retention period.
+Automated cleanup cron job will remove logs older than the retention period.
 
 #### 9.2.3 Error Notifications
 
@@ -913,6 +951,6 @@ View Logs: [Link to Odoo Sync Logs]
 - Configuration fetch failures
 
 **Monitoring Tools**:
-- Odoo built-in logging
+- Odoo built-in logging system
 
 ---
