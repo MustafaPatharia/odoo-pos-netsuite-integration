@@ -1,0 +1,28 @@
+flowchart TB
+    subgraph ODOO["ODOO POS SYSTEM"]
+        direction TB
+        POS[POS Frontend<br/>UI Layer] --> ORDER[POS Order Model<br/>Business Logic]
+        ORDER --> INTEG[NetSuite Module<br/>Integration Layer]
+
+        CONFIG[Configuration<br/>Model] -.-> INTEG
+        LOGS[Sync Logging<br/>Model] -.-> INTEG
+
+        INTEG --> API[API Client<br/>Service]
+    end
+
+    API -->|HTTPS / OAuth 1.0| NS_API[NetSuite<br/>RESTlet API]
+
+    subgraph NETSUITE["ORACLE NETSUITE ERP"]
+        direction TB
+        NS_API[RESTlet<br/>Endpoints]
+        NS_LOGIC[Business Logic<br/>Scripts]
+        NS_CONFIG[Configuration<br/>Records]
+
+        NS_API --> NS_LOGIC
+        NS_LOGIC --> NS_CONFIG
+    end
+
+    style ODOO fill:#e3f2fd
+    style NETSUITE fill:#fff8e1
+    style API fill:#c8e6c9
+    style INTEG fill:#c8e6c9

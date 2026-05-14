@@ -1,0 +1,34 @@
+flowchart TD
+    A[Sync Operation] --> B{Request<br/>Successful?}
+
+    B -->|Yes| C[Update Status:<br/>Synced]
+    B -->|No| D{Retry<br/>Enabled?}
+
+    D -->|No| E[Update Status:<br/>Failed<br/>Log Error]
+    D -->|Yes| F{Attempts <<br/>Max Retries?}
+
+    F -->|No| G[Calculate Delay]
+    F -->|Yes| E
+
+    G --> H{Exponential<br/>Backoff?}
+    H -->|Yes| I[Delay = Base * 2^attempt]
+    H -->|No| J[Delay = Base]
+
+    I --> K[Schedule Retry<br/>in Queue]
+    J --> K
+
+    K --> L[Wait for Delay]
+    L --> A
+
+    C --> M[Send Success<br/>Notification?]
+    E --> N[Send Failure<br/>Notification]
+
+    M -->|Enabled| O[Email Admin]
+    M -->|Disabled| P[End]
+
+    N --> O
+    O --> P
+
+    style C fill:#d4edda
+    style E fill:#f8d7da
+    style K fill:#fff3cd

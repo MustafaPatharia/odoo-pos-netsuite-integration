@@ -1,0 +1,26 @@
+sequenceDiagram
+    participant Cron as Odoo Cron<br/>(Hourly)
+    participant Service as Product<br/>Sync Service
+    participant API as API<br/>Client
+    participant NS as NetSuite<br/>REST API
+    participant DB as Odoo<br/>Database
+
+    Cron->>Service: cron_sync_products_from_netsuite()
+    Service->>API: GET /services/rest/record/v1/inventoryItem
+    API->>NS: GET with filters (modified since last sync)
+    NS-->>API: 200 OK {items: [...]}
+    API-->>Service: Product list
+
+    loop For Each Product
+        Service->>Service: Map NetSuite fields to Odoo fields
+        Service->>DB: Search for existing product by default_code
+
+        alt Product Exists
+            Service->>DB: Update product fields
+        else New Product
+            Service->>DB: Create new product
+        end
+    end
+
+    Service->>DB: Update last_sync_timestamp
+    Service-->>Cron: Summary: 25 updated, 3 created

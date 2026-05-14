@@ -1,0 +1,27 @@
+sequenceDiagram
+    participant NSAdmin as NetSuite<br/>Administrator
+    participant NSRecord as NetSuite<br/>Config Record
+    participant NSScript as User Event<br/>Script
+    participant OdooAPI as Odoo<br/>API Endpoint
+    participant OdooConfig as Odoo<br/>Config Model
+
+    NSAdmin->>NSRecord: Update integration_mode<br/>to "scheduled"
+    NSRecord->>NSScript: afterSubmit event
+    NSScript->>NSScript: Prepare configuration JSON
+    NSScript->>OdooAPI: POST /api/netsuite/config/update
+
+    OdooAPI->>OdooAPI: Authenticate request
+    OdooAPI->>OdooConfig: Validate JSON structure
+
+    alt Valid Configuration
+        OdooConfig->>OdooConfig: Parse and store JSON
+        OdooConfig->>OdooConfig: Update computed fields
+        OdooConfig-->>OdooAPI: Success
+        OdooAPI-->>NSScript: 200 OK {success: true}
+        NSScript-->>NSRecord: Mark sync successful
+    else Invalid Configuration
+        OdooConfig-->>OdooAPI: Validation error
+        OdooAPI-->>NSScript: 400 Bad Request
+        NSScript-->>NSRecord: Mark sync failed
+        NSScript->>NSAdmin: Send error notification
+    end
