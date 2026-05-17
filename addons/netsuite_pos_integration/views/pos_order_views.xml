@@ -64,12 +64,10 @@
         </field>
     </record>
 
-    <!-- Action to Sync Multiple Orders -->
+    <!-- Action to Sync Multiple Orders (removed from Actions dropdown) -->
     <record id="action_sync_multiple_orders" model="ir.actions.server">
         <field name="name">Sync to NetSuite</field>
         <field name="model_id" ref="point_of_sale.model_pos_order"/>
-        <field name="binding_model_id" ref="point_of_sale.model_pos_order"/>
-        <field name="binding_view_types">list</field>
         <field name="state">code</field>
         <field name="code">
 if records:

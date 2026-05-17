@@ -1,10 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    
+
     <!-- ========================================== -->
     <!-- Subsidiary Mapping Views -->
     <!-- ========================================== -->
-    
+
     <record id="view_netsuite_subsidiary_mapping_tree" model="ir.ui.view">
         <field name="name">netsuite.subsidiary.mapping.tree</field>
         <field name="model">netsuite.subsidiary.mapping</field>
@@ -12,7 +12,6 @@
             <tree string="Subsidiary Mappings" decoration-muted="not active">
                 <field name="warehouse_id"/>
                 <field name="warehouse_code"/>
-                <field name="netsuite_subsidiary_name"/>
                 <field name="netsuite_subsidiary_id"/>
                 <field name="netsuite_department_id"/>
                 <field name="netsuite_location_id"/>
@@ -20,18 +19,18 @@
             </tree>
         </field>
     </record>
-    
+
     <record id="view_netsuite_subsidiary_mapping_form" model="ir.ui.view">
         <field name="name">netsuite.subsidiary.mapping.form</field>
         <field name="model">netsuite.subsidiary.mapping</field>
         <field name="arch" type="xml">
             <form string="Subsidiary Mapping">
                 <sheet>
-                    <div class="oe_button_box" name="button_box">
-                        <button name="toggle_active" type="object" class="oe_stat_button" icon="fa-archive">
+                    <!-- <div class="oe_button_box" name="button_box">
+                        <button name="toggle_active" type="object" class="oe_stat_button" icon="fa-archive" string="Archive">
                             <field name="active" widget="boolean_button" options='{"terminology": "archive"}'/>
                         </button>
-                    </div>
+                    </div> -->
                     <group>
                         <group name="odoo_info" string="Odoo Information">
                             <field name="config_id" invisible="1"/>
@@ -39,10 +38,9 @@
                             <field name="warehouse_code"/>
                         </group>
                         <group name="netsuite_info" string="NetSuite Information">
-                            <field name="netsuite_subsidiary_id"/>
-                            <field name="netsuite_subsidiary_name"/>
-                            <field name="netsuite_department_id"/>
-                            <field name="netsuite_location_id"/>
+                            <field name="netsuite_subsidiary_id" widget="selection" string="Subsidiary"/>
+                            <field name="netsuite_department_id" widget="selection" string="Department"/>
+                            <field name="netsuite_location_id" widget="selection" string="Location"/>
                         </group>
                     </group>
                     <group name="notes" string="Notes">
@@ -52,7 +50,7 @@
             </form>
         </field>
     </record>
-    
+
     <record id="view_netsuite_subsidiary_mapping_search" model="ir.ui.view">
         <field name="name">netsuite.subsidiary.mapping.search</field>
         <field name="model">netsuite.subsidiary.mapping</field>
@@ -60,36 +58,33 @@
             <search string="Search Subsidiary Mappings">
                 <field name="warehouse_id"/>
                 <field name="warehouse_code"/>
-                <field name="netsuite_subsidiary_name"/>
                 <field name="netsuite_subsidiary_id"/>
                 <filter string="Active" name="active" domain="[('active','=',True)]"/>
                 <filter string="Archived" name="inactive" domain="[('active','=',False)]"/>
                 <group expand="0" string="Group By">
                     <filter string="Warehouse" name="group_warehouse" context="{'group_by':'warehouse_id'}"/>
-                    <filter string="NetSuite Subsidiary" name="group_subsidiary" context="{'group_by':'netsuite_subsidiary_name'}"/>
+                    <filter string="NetSuite Subsidiary" name="group_subsidiary" context="{'group_by':'netsuite_subsidiary_id'}"/>
                 </group>
             </search>
         </field>
     </record>
-    
+
     <!-- ========================================== -->
     <!-- Payment Method Mapping Views -->
     <!-- ========================================== -->
-    
+
     <record id="view_netsuite_payment_method_mapping_tree" model="ir.ui.view">
         <field name="name">netsuite.payment.method.mapping.tree</field>
         <field name="model">netsuite.payment.method.mapping</field>
         <field name="arch" type="xml">
             <tree string="Payment Method Mappings" decoration-muted="not active">
                 <field name="odoo_payment_method_id"/>
-                <field name="netsuite_payment_method_name"/>
                 <field name="netsuite_payment_method_id"/>
-                <field name="last_synced"/>
                 <field name="active" widget="boolean_toggle"/>
             </tree>
         </field>
     </record>
-    
+
     <record id="view_netsuite_payment_method_mapping_form" model="ir.ui.view">
         <field name="name">netsuite.payment.method.mapping.form</field>
         <field name="model">netsuite.payment.method.mapping</field>
@@ -97,7 +92,7 @@
             <form string="Payment Method Mapping">
                 <sheet>
                     <div class="oe_button_box" name="button_box">
-                        <button name="toggle_active" type="object" class="oe_stat_button" icon="fa-archive">
+                        <button name="toggle_active" type="object" class="oe_stat_button" icon="fa-archive" string="Archive">
                             <field name="active" widget="boolean_button" options='{"terminology": "archive"}'/>
                         </button>
                     </div>
@@ -107,23 +102,20 @@
                             <field name="odoo_payment_method_id" options="{'no_create': True}"/>
                         </group>
                         <group name="netsuite_info" string="NetSuite Information">
-                            <field name="netsuite_payment_method_id"/>
-                            <field name="netsuite_payment_method_name"/>
-                            <field name="last_synced"/>
+                            <field name="netsuite_payment_method_id" widget="selection" string="Payment Method"/>
                         </group>
                     </group>
                 </sheet>
             </form>
         </field>
     </record>
-    
+
     <record id="view_netsuite_payment_method_mapping_search" model="ir.ui.view">
         <field name="name">netsuite.payment.method.mapping.search</field>
         <field name="model">netsuite.payment.method.mapping</field>
         <field name="arch" type="xml">
             <search string="Search Payment Method Mappings">
                 <field name="odoo_payment_method_id"/>
-                <field name="netsuite_payment_method_name"/>
                 <field name="netsuite_payment_method_id"/>
                 <filter string="Active" name="active" domain="[('active','=',True)]"/>
                 <filter string="Archived" name="inactive" domain="[('active','=',False)]"/>
@@ -133,11 +125,11 @@
             </search>
         </field>
     </record>
-    
+
     <!-- ========================================== -->
     <!-- Actions -->
     <!-- ========================================== -->
-    
+
     <record id="action_netsuite_subsidiary_mapping" model="ir.actions.act_window">
         <field name="name">Shop/Subsidiary Mappings</field>
         <field name="res_model">netsuite.subsidiary.mapping</field>
@@ -152,7 +144,7 @@
             </p>
         </field>
     </record>
-    
+
     <record id="action_netsuite_payment_method_mapping" model="ir.actions.act_window">
         <field name="name">Payment Method Mappings</field>
         <field name="res_model">netsuite.payment.method.mapping</field>
@@ -167,21 +159,5 @@
             </p>
         </field>
     </record>
-    
-    <!-- ========================================== -->
-    <!-- Menu Items (will be added to main NetSuite menu) -->
-    <!-- ========================================== -->
-    
-    <menuitem id="menu_netsuite_subsidiary_mapping"
-              name="Shop/Subsidiary Mapping"
-              parent="menu_netsuite_config"
-              action="action_netsuite_subsidiary_mapping"
-              sequence="15"/>
-              
-    <menuitem id="menu_netsuite_payment_method_mapping"
-              name="Payment Method Mapping"
-              parent="menu_netsuite_config"
-              action="action_netsuite_payment_method_mapping"
-              sequence="16"/>
-              
+
 </odoo>

@@ -246,8 +246,9 @@ class NetSuiteSyncQueue(models.Model):
         _logger.info('Starting batch queue processing')
 
         config = self.env['netsuite.config'].get_active_config()
-        if not config.active or config.sync_mode != 'batch':
-            _logger.info('Batch sync is not enabled')
+        # Process queue for scheduled mode
+        if not config.active or config.config_integration_mode not in ['scheduled', 'manual']:
+            _logger.info('Scheduled/manual sync is not enabled')
             return
 
         # Get pending items
@@ -255,7 +256,7 @@ class NetSuiteSyncQueue(models.Model):
             ('status', 'in', ['pending', 'retry']),
             ('scheduled_date', '<=', fields.Datetime.now()),
             ('config_id', '=', config.id)
-        ], limit=config.batch_size, order='priority desc, create_date asc')
+        ], limit=config.config_order_batch_size or 100, order='priority desc, create_date asc')
 
         if pending_items:
             _logger.info(f'Processing {len(pending_items)} batch items')
@@ -277,7 +278,7 @@ class NetSuiteSyncQueue(models.Model):
             ('status', '=', 'retry'),
             ('scheduled_date', '<=', fields.Datetime.now()),
             ('config_id', '=', config.id)
-        ], limit=config.batch_size)
+        ], limit=config.config_order_batch_size or 100)
 
         if retry_items:
             _logger.info(f'Retrying {len(retry_items)} items')

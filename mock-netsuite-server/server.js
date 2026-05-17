@@ -2,7 +2,12 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const cors = require('cors');
 const morgan = require('morgan');
-const { v4: uuidv4 } = require('uuid');
+const mockDatabase = require('./data/mock-database');
+
+// Import routes
+const restletRoutes = require('./routes/restlet');
+const restApiRoutes = require('./routes/rest-api');
+const adminRoutes = require('./routes/admin');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -12,46 +17,6 @@ app.use(cors());
 app.use(bodyParser.json({ limit: '10mb' }));
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(morgan('dev'));
-
-// In-memory storage for mock NetSuite data
-const mockDatabase = {
-  salesOrders: new Map(),
-  customers: new Map(),
-  items: new Map(),
-  payments: new Map(),
-  syncLogs: []
-};
-
-// Initialize some mock data
-mockDatabase.customers.set('1', {
-  internalId: '1',
-  entityId: 'CUST-001',
-  companyName: 'Default Customer',
-  email: 'customer@example.com',
-  externalId: 'ODOO-CUST-001'
-});
-
-mockDatabase.items.set('1', {
-  internalId: '1',
-  itemId: 'PROD-001',
-  displayName: 'Sample Product',
-  basePrice: 100.00
-});
-
-// Helper function to log sync operations
-function logSync(operation, status, data, error = null) {
-  const log = {
-    id: uuidv4(),
-    timestamp: new Date().toISOString(),
-    operation,
-    status,
-    data: JSON.stringify(data).substring(0, 500),
-    error
-  };
-  mockDatabase.syncLogs.push(log);
-  console.log(`[SYNC LOG] ${operation} - ${status}`, error || '');
-  return log;
-}
 
 // Health check endpoint
 app.get('/health', (req, res) => {
@@ -63,418 +28,70 @@ app.get('/health', (req, res) => {
     stats: {
       salesOrders: mockDatabase.salesOrders.size,
       customers: mockDatabase.customers.size,
-      syncLogs: mockDatabase.syncLogs.length
+      syncLogs: mockDatabase.syncLogs.length,
+      subsidiaries: mockDatabase.subsidiaries.size,
+      departments: mockDatabase.departments.size,
+      locations: mockDatabase.locations.size,
+      paymentMethods: mockDatabase.paymentMethods.size
+    },
+    endpoints: {
+      restlet: '/app/site/hosting/restlet.nl',
+      rest_api: '/services/rest/record/v1/{recordType}',
+      admin: ['/admin/orders', '/admin/customers', '/admin/logs', '/admin/master-data']
     }
   });
 });
 
-// Main NetSuite RESTlet endpoint (matches real NetSuite URL pattern)
-app.post('/app/site/hosting/restlet.nl', (req, res) => {
-  try {
-    const { script, deploy, action } = req.query;
-    const payload = req.body;
+// Mount routes
+app.use('/app/site/hosting/restlet.nl', restletRoutes);
+app.use('/services/rest/record/v1', restApiRoutes);
+app.use('/admin', adminRoutes);
 
-    console.log('\n=== Incoming NetSuite Request ===');
-    console.log('Action:', action);
-    console.log('Payload:', JSON.stringify(payload, null, 2));
+// Simple API endpoint for products (convenience endpoint)
+app.get('/api/items', (req, res) => {
+  const limit = req.query.limit ? parseInt(req.query.limit) : null; // No limit = fetch all
+  const offset = parseInt(req.query.offset) || 0;
+  const ids = req.query.ids ? req.query.ids.split(',') : null;
 
-    // Route based on action
-    switch (action) {
-      case 'createSalesOrder':
-        return handleCreateSalesOrder(req, res, payload);
-      case 'createCustomer':
-        return handleCreateCustomer(req, res, payload);
-      case 'createPayment':
-        return handleCreatePayment(req, res, payload);
-      case 'getStatus':
-        return handleGetStatus(req, res, payload);
-      case 'getConfig':
-        return handleGetConfig(req, res);
-      case 'createEODInvoice':
-        return handleCreateEODInvoice(req, res, payload);
-      default:
-        return res.status(400).json({
-          success: false,
-          error: `Unknown action: ${action}`
-        });
-    }
-  } catch (error) {
-    console.error('Error processing request:', error);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
-  }
-});
+  console.log(`\n=== GET /api/items (limit: ${limit || 'ALL'}, offset: ${offset}) ===`);
+  console.log('⚡ Generating RANDOM prices and costs for testing...');
 
-// Also support GET for config
-app.get('/app/site/hosting/restlet.nl', (req, res) => {
-  const { action } = req.query;
+  let allItems = Array.from(mockDatabase.items.values());
 
-  if (action === 'getConfig') {
-    return handleGetConfig(req, res);
+  // Filter by IDs if provided
+  if (ids && ids.length > 0) {
+    allItems = allItems.filter(item => ids.includes(item.id));
   }
 
-  res.status(400).json({
-    success: false,
-    error: 'GET method only supports getConfig action'
-  });
-});
+  // Apply pagination (if no limit, return all items)
+  const paginatedItems = limit ? allItems.slice(offset, offset + limit) : allItems.slice(offset);
 
-// Handle Get Configuration
-function handleGetConfig(req, res) {
-  console.log('\n=== Configuration Request ===');
-
-  // NetSuite returns configuration for Odoo
-  const config = {
-    success: true,
-    configuration: {
-      // Retry settings
-      retry_enabled: true,
-      max_retries: 3,
-      retry_delay_minutes: 5,
-
-      // Email settings
-      send_email_on_failure: true,
-      notification_email: 'admin@example.com',
-
-      // Batch settings
-      batch_size: 100,
-
-      // Sync schedules
-      hourly_sync_enabled: true,
-      end_of_day_sync_time: '23:59',
-      end_of_day_sync_enabled: true,
-
-      // Logging
-      enable_debug_logging: true,
-      log_retention_days: 30,
-
-      // Business rules
-      sync_on_invoice_confirm: true,
-      require_payment_before_sync: false,
-
-      // Timeouts
-      connection_timeout: 30,
-      request_timeout: 60
-    }
-  };
-
-  logSync('GET_CONFIG', 'success', config);
-  res.json(config);
-}
-
-// Handle Sales Order Creation
-function handleCreateSalesOrder(req, res, payload) {
-  try {
-    const orderData = payload;
-
-    // Validate required fields
-    if (!orderData.entity || !orderData.items || !Array.isArray(orderData.items)) {
-      logSync('CREATE_SALES_ORDER', 'failed', orderData, 'Missing required fields');
-      return res.status(400).json({
-        success: false,
-        error: 'Missing required fields: entity and items are required'
-      });
-    }
-
-    // Generate NetSuite internal ID
-    const internalId = uuidv4();
-    const tranId = `SO-${Date.now()}`;
-
-    // Calculate totals
-    const subTotal = orderData.items.reduce((sum, item) =>
-      sum + ((item.quantity || 1) * (item.rate || 0)), 0);
-
-    // Create sales order record
-    const salesOrder = {
-      internalId: internalId,
-      tranId: tranId,
-      entity: orderData.entity,
-      tranDate: orderData.tranDate || new Date().toISOString().split('T')[0],
-      currency: orderData.currency || 'USD',
-      status: orderData.status || 'Pending Fulfillment',
-      items: orderData.items.map((item, index) => ({
-        line: index + 1,
-        item: item.item,
-        quantity: item.quantity || 1,
-        rate: item.rate || 0,
-        amount: (item.quantity || 1) * (item.rate || 0),
-        description: item.description || ''
-      })),
-      subTotal: subTotal,
-      total: orderData.total || subTotal,
-      memo: orderData.memo || '',
-      externalId: orderData.externalId || `ODOO-${internalId}`,
-      createdDate: new Date().toISOString(),
-      lastModifiedDate: new Date().toISOString()
+  // Generate random prices and costs for each item (for testing sync updates)
+  const itemsWithRandomPrices = paginatedItems.map(item => {
+    const randomPrice = (Math.random() * 15 + 2).toFixed(2); // Random price between $2-$17
+    const randomCost = (parseFloat(randomPrice) * (Math.random() * 0.5 + 0.3)).toFixed(2); // Cost is 30-80% of price
+    
+    return {
+      ...item,
+      baseprice: parseFloat(randomPrice),
+      cost: parseFloat(randomCost),
+      // Optionally randomize other fields
+      isinactive: Math.random() > 0.95 ? true : false, // 5% chance inactive
+      description: `${item.description} (Updated: ${new Date().toLocaleTimeString()})`
     };
-
-    // Store in mock database
-    mockDatabase.salesOrders.set(internalId, salesOrder);
-
-    // Log successful sync
-    logSync('CREATE_SALES_ORDER', 'success', salesOrder);
-
-    // Return NetSuite-like response
-    res.status(201).json({
-      success: true,
-      internalId: internalId,
-      tranId: tranId,
-      externalId: salesOrder.externalId,
-      type: 'salesorder',
-      status: salesOrder.status,
-      message: 'Sales Order created successfully'
-    });
-
-  } catch (error) {
-    logSync('CREATE_SALES_ORDER', 'error', payload, error.message);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
-  }
-}
-
-// Handle Customer Creation
-function handleCreateCustomer(req, res, payload) {
-  try {
-    const customerId = uuidv4();
-    const entityId = `CUST-${Date.now()}`;
-
-    const customer = {
-      internalId: customerId,
-      entityId: entityId,
-      companyName: payload.companyName || payload.name,
-      email: payload.email,
-      phone: payload.phone,
-      externalId: payload.externalId || `ODOO-CUST-${customerId}`,
-      createdDate: new Date().toISOString()
-    };
-
-    mockDatabase.customers.set(customerId, customer);
-    logSync('CREATE_CUSTOMER', 'success', customer);
-
-    res.status(201).json({
-      success: true,
-      internalId: customerId,
-      entityId: entityId,
-      externalId: customer.externalId,
-      type: 'customer',
-      message: 'Customer created successfully'
-    });
-
-  } catch (error) {
-    logSync('CREATE_CUSTOMER', 'error', payload, error.message);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
-  }
-}
-
-// Handle Payment Creation
-function handleCreatePayment(req, res, payload) {
-  try {
-    const paymentId = uuidv4();
-    const tranId = `PMT-${Date.now()}`;
-
-    const payment = {
-      internalId: paymentId,
-      tranId: tranId,
-      customer: payload.customer,
-      salesOrder: payload.salesOrder,
-      amount: payload.amount,
-      paymentMethod: payload.paymentMethod,
-      memo: payload.memo,
-      externalId: payload.externalId || `ODOO-PMT-${paymentId}`,
-      createdDate: new Date().toISOString()
-    };
-
-    mockDatabase.payments.set(paymentId, payment);
-    logSync('CREATE_PAYMENT', 'success', payment);
-
-    res.status(201).json({
-      success: true,
-      internalId: paymentId,
-      tranId: tranId,
-      externalId: payment.externalId,
-      type: 'payment',
-      message: 'Payment recorded successfully'
-    });
-
-  } catch (error) {
-    logSync('CREATE_PAYMENT', 'error', payload, error.message);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
-  }
-}
-
-// Handle Status Check
-function handleGetStatus(req, res, payload) {
-  try {
-    const { internalId, externalId } = payload;
-
-    let record = null;
-    let type = null;
-
-    // Search in sales orders
-    if (internalId && mockDatabase.salesOrders.has(internalId)) {
-      record = mockDatabase.salesOrders.get(internalId);
-      type = 'salesorder';
-    }
-
-    // Search by external ID if not found
-    if (!record && externalId) {
-      for (const [id, order] of mockDatabase.salesOrders) {
-        if (order.externalId === externalId) {
-          record = order;
-          type = 'salesorder';
-          break;
-        }
-      }
-    }
-
-    if (!record) {
-      return res.status(404).json({
-        success: false,
-        error: 'Record not found'
-      });
-    }
-
-    res.json({
-      success: true,
-      type: type,
-      status: record.status || 'Unknown',
-      record: record
-    });
-
-  } catch (error) {
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
-  }
-}
-
-// Handle End-of-Day Invoice Creation
-function handleCreateEODInvoice(req, res, payload) {
-  try {
-    const { tranDate, externalId, shop, orders, totalAmount, orderCount } = payload;
-
-    console.log('\n=== End-of-Day Invoice Creation ===');
-    console.log('Business Date:', tranDate);
-    console.log('Shop:', shop);
-    console.log('Order Count:', orderCount);
-    console.log('Total Amount:', totalAmount);
-
-    // Validate required fields
-    if (!tranDate || !externalId || !orders || !Array.isArray(orders)) {
-      logSync('CREATE_EOD_INVOICE', 'failed', payload, 'Missing required fields');
-      return res.status(400).json({
-        success: false,
-        error: 'Missing required fields: tranDate, externalId, and orders are required'
-      });
-    }
-
-    // Generate NetSuite IDs
-    const internalId = uuidv4();
-    const tranId = `INV-EOD-${tranDate.replace(/-/g, '')}`;
-
-    // Create EOD invoice record
-    const eodInvoice = {
-      internalId: internalId,
-      tranId: tranId,
-      externalId: externalId,
-      type: 'invoice',
-      subType: 'end_of_day',
-      tranDate: tranDate,
-      shop: shop,
-      orderCount: orderCount,
-      orders: orders,
-      totalAmount: totalAmount,
-      status: 'Posted',
-      createdDate: new Date().toISOString(),
-      memo: `End-of-Day consolidated invoice for ${shop} on ${tranDate} (${orderCount} orders)`
-    };
-
-    // Store in database
-    mockDatabase.salesOrders.set(internalId, eodInvoice);
-
-    // Log successful creation
-    logSync('CREATE_EOD_INVOICE', 'success', payload);
-
-    console.log('✓ EOD Invoice created:', tranId);
-    console.log('Internal ID:', internalId);
-
-    // Return success response
-    res.json({
-      success: true,
-      internalId: internalId,
-      tranId: tranId,
-      externalId: externalId,
-      type: 'invoice',
-      status: 'Posted',
-      totalAmount: totalAmount,
-      orderCount: orderCount,
-      message: `End-of-Day invoice created successfully for ${orderCount} orders`
-    });
-
-  } catch (error) {
-    logSync('CREATE_EOD_INVOICE', 'error', payload, error.message);
-    res.status(500).json({
-      success: false,
-      error: error.message
-    });
-  }
-}
-
-// Admin endpoints for debugging
-app.get('/admin/orders', (req, res) => {
-  const orders = Array.from(mockDatabase.salesOrders.values());
-  res.json({
-    count: orders.length,
-    orders: orders
   });
-});
 
-app.get('/admin/customers', (req, res) => {
-  const customers = Array.from(mockDatabase.customers.values());
-  res.json({
-    count: customers.length,
-    customers: customers
-  });
-});
-
-app.get('/admin/logs', (req, res) => {
-  const limit = parseInt(req.query.limit) || 50;
-  const logs = mockDatabase.syncLogs.slice(-limit);
-  res.json({
-    count: logs.length,
-    logs: logs
-  });
-});
-
-app.delete('/admin/reset', (req, res) => {
-  mockDatabase.salesOrders.clear();
-  mockDatabase.customers.clear();
-  mockDatabase.payments.clear();
-  mockDatabase.syncLogs = [];
-
-  // Re-initialize default data
-  mockDatabase.customers.set('1', {
-    internalId: '1',
-    entityId: 'CUST-001',
-    companyName: 'Default Customer',
-    email: 'customer@example.com',
-    externalId: 'ODOO-CUST-001'
+  console.log(`✓ Returning ${itemsWithRandomPrices.length} items with RANDOMIZED prices`);
+  itemsWithRandomPrices.slice(0, 3).forEach(item => {
+    console.log(`  - ${item.displayname}: $${item.baseprice} (cost: $${item.cost})`);
   });
 
   res.json({
     success: true,
-    message: 'Mock database reset successfully'
+    items: itemsWithRandomPrices,
+    count: itemsWithRandomPrices.length,
+    total: allItems.length,
+    hasMore: (offset + itemsWithRandomPrices.length) < allItems.length
   });
 });
 
@@ -485,9 +102,23 @@ app.listen(PORT, () => {
   console.log('==============================================');
   console.log(`📍 Server: http://localhost:${PORT}`);
   console.log(`🏥 Health: http://localhost:${PORT}/health`);
-  console.log(`📊 Admin Orders: http://localhost:${PORT}/admin/orders`);
-  console.log(`👥 Admin Customers: http://localhost:${PORT}/admin/customers`);
-  console.log(`📝 Admin Logs: http://localhost:${PORT}/admin/logs`);
+  console.log('\n📦 RESTlet API:');
+  console.log(`   http://localhost:${PORT}/app/site/hosting/restlet.nl`);
+  console.log('\n🔍 REST Record Browser API:');
+  console.log(`   http://localhost:${PORT}/services/rest/record/v1/subsidiary`);
+  console.log(`   http://localhost:${PORT}/services/rest/record/v1/department`);
+  console.log(`   http://localhost:${PORT}/services/rest/record/v1/location`);
+  console.log(`   http://localhost:${PORT}/services/rest/record/v1/paymentmethod`);
+  console.log('\n📊 Admin Endpoints:');
+  console.log(`   Orders:       http://localhost:${PORT}/admin/orders`);
+  console.log(`   Customers:    http://localhost:${PORT}/admin/customers`);
+  console.log(`   Logs:         http://localhost:${PORT}/admin/logs`);
+  console.log(`   Master Data:  http://localhost:${PORT}/admin/master-data`);
+  console.log('\n📚 Master Data Loaded:');
+  console.log(`   Subsidiaries: ${mockDatabase.subsidiaries.size}`);
+  console.log(`   Departments:  ${mockDatabase.departments.size}`);
+  console.log(`   Locations:    ${mockDatabase.locations.size}`);
+  console.log(`   Payment Methods: ${mockDatabase.paymentMethods.size}`);
   console.log('==============================================\n');
 });
 

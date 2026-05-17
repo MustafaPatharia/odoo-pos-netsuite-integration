@@ -37,14 +37,12 @@ class NetSuiteConfig(models.Model):
 
     api_url = fields.Char(
         string='API URL',
-        required=True,
         default='http://host.docker.internal:3000',
         help='NetSuite base URL'
     )
 
     account_id = fields.Char(
         string='Account ID',
-        required=True,
         help='NetSuite Account ID'
     )
 

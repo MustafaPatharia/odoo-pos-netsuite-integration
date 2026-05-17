@@ -13,7 +13,7 @@ services:
     volumes:
       - odoo-db-data:/var/lib/postgresql/data/pgdata
     ports:
-      - "5432:5432"
+      - "5433:5432"
     networks:
       - odoo-network
     restart: unless-stopped

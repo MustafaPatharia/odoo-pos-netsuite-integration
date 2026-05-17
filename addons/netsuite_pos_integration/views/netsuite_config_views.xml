@@ -107,7 +107,7 @@
 
                             <div class="alert alert-warning" role="alert" invisible="not netsuite_config">
                                 <p><strong>Note:</strong> All these settings are controlled by NetSuite and cannot be changed from Odoo.</p>
-                                <p>To modify these values, update the configuration record in NetSuite and click <strong>"Fetch Configuration"</strong> again.</p>
+                                <!-- <p>To modify these values, update the configuration record in NetSuite and click <strong>"Fetch Configuration"</strong> again.</p> -->
                             </div>
                         </page>
                     </notebook>

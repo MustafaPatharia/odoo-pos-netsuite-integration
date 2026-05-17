@@ -1,31 +1,93 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
 
-    <!-- Main Menu -->
+    <!-- ========================================== -->
+    <!-- Main NetSuite Menu -->
+    <!-- ========================================== -->
     <menuitem id="menu_netsuite_root"
               name="NetSuite"
               sequence="100"
               web_icon="netsuite_pos_integration,static/description/icon.png"/>
 
-    <!-- Configuration Menu -->
-    <menuitem id="menu_netsuite_config"
-              name="Configuration"
+    <!-- ========================================== -->
+    <!-- Configurations Submenu -->
+    <!-- ========================================== -->
+    <menuitem id="menu_netsuite_configurations"
+              name="Configurations"
               parent="menu_netsuite_root"
-              action="action_netsuite_config"
               sequence="10"/>
 
-    <!-- Sync Queue Menu -->
-    <menuitem id="menu_netsuite_sync_queue"
-              name="Sync Queue"
-              parent="menu_netsuite_root"
-              action="action_netsuite_sync_queue"
+    <!-- <menuitem id="menu_netsuite_config"
+              name="NetSuite Settings"
+              parent="menu_netsuite_configurations"
+              action="action_netsuite_config"
+              sequence="10"/> -->
+
+    <menuitem id="menu_netsuite_subsidiary_mapping"
+              name="Subsidiary Mapping"
+              parent="menu_netsuite_configurations"
+              action="action_netsuite_subsidiary_mapping"
               sequence="20"/>
 
-    <!-- Sync Logs Menu -->
-    <menuitem id="menu_netsuite_sync_log"
-              name="Sync Logs"
-              parent="menu_netsuite_root"
-              action="action_netsuite_sync_log"
+    <menuitem id="menu_netsuite_payment_method_mapping"
+              name="Payment Method Mapping"
+              parent="menu_netsuite_configurations"
+              action="action_netsuite_payment_method_mapping"
               sequence="30"/>
+
+    <!-- ========================================== -->
+    <!-- Operations Submenu -->
+    <!-- ========================================== -->
+    <menuitem id="menu_netsuite_operations"
+              name="Operations"
+              parent="menu_netsuite_root"
+              sequence="20"/>
+
+    <menuitem id="menu_netsuite_fetch_products"
+              name="Fetch Products"
+              parent="menu_netsuite_operations"
+              action="action_fetch_products_from_netsuite"
+              sequence="10"/>
+
+    <menuitem id="menu_netsuite_eod_order_summary"
+              name="EOD Order Summary"
+              parent="menu_netsuite_operations"
+              action="action_netsuite_eod_order_summary"
+              sequence="20"/>
+
+    <menuitem id="menu_netsuite_eod_invoice_summary"
+              name="EOD Invoice Summary"
+              parent="menu_netsuite_operations"
+              action="action_netsuite_eod_invoice_summary"
+              sequence="30"/>
+
+    <!-- ========================================== -->
+    <!-- Sync Submenu -->
+    <!-- ========================================== -->
+    <menuitem id="menu_netsuite_sync"
+              name="Sync"
+              parent="menu_netsuite_root"
+              sequence="30"/>
+
+    <menuitem id="menu_netsuite_sync_queue"
+              name="Queue"
+              parent="menu_netsuite_sync"
+              action="action_netsuite_sync_queue"
+              sequence="10"/>
+
+    <menuitem id="menu_netsuite_sync_log"
+              name="Logs"
+              parent="menu_netsuite_sync"
+              action="action_netsuite_sync_log"
+              sequence="20"/>
+
+    <!-- ========================================== -->
+    <!-- Reports Submenu (Future Scope) -->
+    <!-- ========================================== -->
+    <menuitem id="menu_netsuite_reports"
+              name="Reports"
+              parent="menu_netsuite_root"
+              sequence="40"
+              groups="base.group_no_one"/>
 
 </odoo>

@@ -31,6 +31,7 @@ class NetSuiteSyncLog(models.Model):
         ('customer', 'Customer'),
         ('payment', 'Payment'),
         ('eod_invoice', 'End-of-Day Invoice'),
+        ('product', 'Product Import'),
     ], string='Record Type', required=True, index=True)
 
     record_id = fields.Integer(
@@ -44,6 +45,8 @@ class NetSuiteSyncLog(models.Model):
         ('success', 'Success'),
         ('failed', 'Failed'),
         ('warning', 'Warning'),
+        ('processing', 'Processing'),
+        ('partial', 'Partial Success'),
     ], string='Status', required=True, index=True)
 
     sync_mode = fields.Selection([

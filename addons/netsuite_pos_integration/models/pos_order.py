@@ -298,7 +298,8 @@ class PosOrder(models.Model):
     def _auto_sync_to_netsuite(self):
         """Automatically sync order to NetSuite based on configuration"""
         config = self.env['netsuite.config'].search([('active', '=', True)], limit=1)
-        if not config or not config.enable_auto_sync:
+        # Only sync if realtime mode is enabled
+        if not config or config.config_integration_mode != 'realtime':
             return
 
         for order in self:
@@ -306,51 +307,33 @@ class PosOrder(models.Model):
             if order.netsuite_sync_status in ['synced', 'queued']:
                 continue
 
-            # Determine sync mode
-            if config.sync_mode == 'realtime':
-                # Create queue item and process immediately
-                queue_vals = {
-                    'config_id': config.id,
-                    'reference': order.name,
-                    'record_type': 'sales_order',
-                    'record_id': order.id,
-                    'model': 'pos.order',
-                    'status': 'pending',
-                    'sync_mode': 'realtime',
-                    'priority': 10,
-                }
+            # Create queue item for realtime processing
+            queue_vals = {
+                'config_id': config.id,
+                'reference': order.name,
+                'record_type': 'sales_order',
+                'record_id': order.id,
+                'model': 'pos.order',
+                'status': 'pending',
+                'sync_mode': 'realtime',
+                'priority': 10,
+            }
 
-                queue = self.env['netsuite.sync.queue'].create(queue_vals)
-                order.netsuite_sync_status = 'queued'
+            queue = self.env['netsuite.sync.queue'].create(queue_vals)
+            order.netsuite_sync_status = 'queued'
 
-                # Process in background (commit first to avoid blocking UI)
-                self.env.cr.commit()
-                queue._process_queue_items()
-
-            elif config.sync_mode == 'batch':
-                # Just create queue item for later batch processing
-                queue_vals = {
-                    'config_id': config.id,
-                    'reference': order.name,
-                    'record_type': 'sales_order',
-                    'record_id': order.id,
-                    'model': 'pos.order',
-                    'status': 'pending',
-                    'sync_mode': 'batch',
-                    'priority': 10,
-                }
-
-                self.env['netsuite.sync.queue'].create(queue_vals)
-                order.netsuite_sync_status = 'queued'
+            # Process in background (commit first to avoid blocking UI)
+            self.env.cr.commit()
+            queue._process_queue_items()
 
     @api.model
     def create(self, vals):
         """Override create to trigger auto-sync on creation"""
         order = super(PosOrder, self).create(vals)
 
-        # Check if auto-sync on order creation is enabled
+        # Check if realtime sync is enabled
         config = self.env['netsuite.config'].search([('active', '=', True)], limit=1)
-        if config and config.enable_auto_sync and order.state in ['paid', 'done', 'invoiced']:
+        if config and config.config_integration_mode == 'realtime' and config.config_sync_on_order_confirmed and order.state in ['paid', 'done', 'invoiced']:
             order._auto_sync_to_netsuite()
 
         return order
@@ -359,10 +342,10 @@ class PosOrder(models.Model):
         """Override write to trigger auto-sync on state change"""
         result = super(PosOrder, self).write(vals)
 
-        # Check if state changed to paid/done
+        # Check if state changed to paid/done and realtime sync is enabled
         if 'state' in vals and vals.get('state') in ['paid', 'done', 'invoiced']:
             config = self.env['netsuite.config'].search([('active', '=', True)], limit=1)
-            if config and config.enable_auto_sync and config.sync_on_order_confirm:
+            if config and config.config_integration_mode == 'realtime' and config.config_sync_on_order_confirmed:
                 self._auto_sync_to_netsuite()
 
         return result
