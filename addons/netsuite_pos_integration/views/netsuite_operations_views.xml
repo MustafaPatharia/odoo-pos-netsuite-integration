@@ -1,0 +1,165 @@
+<?xml version="1.0" encoding="utf-8"?>
+<odoo>
+
+    <!-- Action to Fetch Products from NetSuite -->
+    <record id="action_fetch_products_from_netsuite" model="ir.actions.server">
+        <field name="name">Fetch Products from NetSuite</field>
+        <field name="model_id" ref="product.model_product_template"/>
+        <field name="state">code</field>
+        <field name="code">
+result = env['netsuite.product.sync'].sync_products_from_netsuite()
+if result.get('success'):
+    # Build message with only non-zero counts
+    parts = []
+    if result['created'] > 0:
+        parts.append(f"Created: {result['created']}")
+    if result['updated'] > 0:
+        parts.append(f"Updated: {result['updated']}")
+    if result['failed'] > 0:
+        parts.append(f"Failed: {result['failed']}")
+
+    message = ', '.join(parts) if parts else 'No changes'
+
+    action = {
+        'type': 'ir.actions.client',
+        'tag': 'display_notification',
+        'params': {
+            'title': 'Products Fetched Successfully',
+            'message': message,
+            'type': 'success' if result['failed'] == 0 else 'warning',
+            'sticky': False,
+        }
+    }
+else:
+    action = {
+        'type': 'ir.actions.client',
+        'tag': 'display_notification',
+        'params': {
+            'title': 'Failed to Fetch Products',
+            'message': '\n'.join(result.get('errors', ['Unknown error'])),
+            'type': 'danger',
+            'sticky': True,
+        }
+    }
+        </field>
+    </record>
+
+    <!-- ========================================== -->
+    <!-- EOD Order Summary Action -->
+    <!-- ========================================== -->
+    <record id="action_netsuite_eod_order_summary" model="ir.actions.server">
+        <field name="name">Sync EOD Orders</field>
+        <field name="model_id" ref="point_of_sale.model_pos_order"/>
+        <field name="state">code</field>
+        <field name="code">
+# Sync consolidated orders from yesterday to NetSuite
+# This creates ONE consolidated Sales Order per shop per day
+
+try:
+    result = env['netsuite.consolidated.sync'].sync_consolidated_orders()
+
+    if result.get('success'):
+        message = 'Successfully synced consolidated orders!\n\n'
+        message += f"Synced: {result.get('synced', 0)}/{result.get('total_combinations', 0)} (shop+date)\n"
+        message += f"Total orders: {result.get('total_orders', 0)}"
+
+        action = {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': '✅ EOD Order Sync Complete',
+                'message': message,
+                'type': 'success',
+                'sticky': False,
+            }
+        }
+    else:
+        error_details = '\n'.join(result.get('errors', []))
+        message = f"Synced: {result.get('synced', 0)}/{result.get('total_combinations', 0)}\n"
+        message += f"Failed: {result.get('failed', 0)}\n\n"
+        message += f"Errors:\n{error_details}"
+
+        action = {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': '⚠️ EOD Order Sync Partial Failure',
+                'message': message,
+                'type': 'warning',
+                'sticky': True,
+            }
+        }
+except Exception as e:
+    action = {
+        'type': 'ir.actions.client',
+        'tag': 'display_notification',
+        'params': {
+            'title': '❌ EOD Order Sync Failed',
+            'message': str(e),
+            'type': 'danger',
+            'sticky': True,
+        }
+    }
+        </field>
+    </record>
+
+    <!-- ========================================== -->
+    <!-- EOD Invoice Summary Action -->
+    <!-- ========================================== -->
+    <record id="action_netsuite_eod_invoice_summary" model="ir.actions.server">
+        <field name="name">Sync EOD Invoices</field>
+        <field name="model_id" ref="account.model_account_move"/>
+        <field name="state">code</field>
+        <field name="code">
+# Sync consolidated invoices from yesterday to NetSuite
+# This creates ONE consolidated Invoice per shop per day
+
+try:
+    result = env['netsuite.consolidated.sync'].sync_consolidated_invoices()
+
+    if result.get('success'):
+        message = 'Successfully synced consolidated invoices!\n\n'
+        message += f"Shops synced: {result.get('synced', 0)}/{result.get('total_shops', 0)}\n"
+        message += f"Total orders included: {result.get('total_orders', 0)}"
+
+        action = {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': '✅ EOD Invoice Sync Complete',
+                'message': message,
+                'type': 'success',
+                'sticky': False,
+            }
+        }
+    else:
+        error_details = '\n'.join(result.get('errors', []))
+        message = f"Synced: {result.get('synced', 0)}/{result.get('total_shops', 0)} shops\n"
+        message += f"Failed: {result.get('failed', 0)} shops\n\n"
+        message += f"Errors:\n{error_details}"
+
+        action = {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': '⚠️ EOD Invoice Sync Partial Failure',
+                'message': message,
+                'type': 'warning',
+                'sticky': True,
+            }
+        }
+except Exception as e:
+    action = {
+        'type': 'ir.actions.client',
+        'tag': 'display_notification',
+        'params': {
+            'title': '❌ EOD Invoice Sync Failed',
+            'message': str(e),
+            'type': 'danger',
+            'sticky': True,
+        }
+    }
+        </field>
+    </record>
+
+</odoo>

@@ -48,6 +48,10 @@ node_modules/
 npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
+
+# Mock NetSuite Server
+mock-netsuite-server/node_modules/
+mock-netsuite-server/storage/
 package-lock.json
 .npm
 
@@ -63,3 +67,5 @@ STATEMENT_OF_WORK.md
 
 *.png
 *.docx
+
+create_test_orders.py

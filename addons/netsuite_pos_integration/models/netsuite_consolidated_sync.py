@@ -25,35 +25,63 @@ class NetSuiteConsolidatedSync(models.AbstractModel):
     _description = 'NetSuite Consolidated Sync Service'
 
     @api.model
-    def sync_consolidated_orders(self, target_date=None, warehouse_ids=None):
+    def sync_consolidated_orders(self, target_date=None, warehouse_ids=None, sync_all_dates=True):
         """
         Sync consolidated orders to NetSuite (one per shop per day)
 
         Args:
-            target_date: Date to sync (default: yesterday)
+            target_date: Specific date to sync (if None and sync_all_dates=False, uses yesterday)
             warehouse_ids: List of warehouse IDs to sync (default: all)
+            sync_all_dates: If True, syncs ALL past unsynced orders grouped by date (manual mode)
+                           If False, syncs only target_date (cron mode)
 
         Returns:
             dict: Sync results
         """
+        _logger.info('[NetSuite EOD Orders] ========== SYNC STARTED ==========')
+
         config = self.env['netsuite.config'].get_active_config()
 
         if not config.config_consolidate_orders:
             raise UserError(_('Consolidated order sync is disabled in configuration'))
 
-        # Determine target date (default to yesterday)
-        if not target_date:
-            target_date = (datetime.now() - timedelta(days=1)).date()
-        elif isinstance(target_date, str):
-            target_date = datetime.strptime(target_date, '%Y-%m-%d').date()
+        _logger.info(f'[NetSuite EOD Orders] Sync mode: {"ALL DATES" if sync_all_dates else "SINGLE DATE"}')
+        _logger.info(f'[NetSuite EOD Orders] Using config: {config.name} (API: {config.api_url})')
 
-        _logger.info(f'Starting consolidated order sync for date: {target_date}')
+        # Create sync log
+        now_utc = fields.Datetime.now()
+        timestamp_str = now_utc.strftime('%Y-%m-%d %H:%M:%S')
+        start_time = datetime.now()
 
-        # Get orders for target date
-        pos_orders = self._get_orders_for_date(target_date, warehouse_ids)
+        sync_log = self.env['netsuite.sync.log'].create({
+            'config_id': config.id,
+            'reference': f'EOD Orders Sync {timestamp_str} (+00:00)',
+            'record_type': 'eod_order',
+            'record_id': 0,  # Bulk operation
+            'status': 'processing',
+            'sync_mode': 'manual',
+            'request_method': 'POST',
+        })
+
+        # Get orders based on sync mode
+        if sync_all_dates:
+            # Manual mode: Get ALL past unsynced orders (exclude today)
+            pos_orders = self._get_all_unsynced_orders(warehouse_ids)
+        else:
+            # Cron mode: Get orders for specific date only
+            if not target_date:
+                target_date = (datetime.now() - timedelta(days=1)).date()
+            elif isinstance(target_date, str):
+                target_date = datetime.strptime(target_date, '%Y-%m-%d').date()
+            pos_orders = self._get_orders_for_date(target_date, warehouse_ids)
 
         if not pos_orders:
-            _logger.info(f'No orders found for date {target_date}')
+            _logger.info('[NetSuite EOD Orders] No orders found for target date')
+            sync_log.write({
+                'status': 'success',
+                'notes': 'No orders to sync',
+                'execution_time_ms': int((datetime.now() - start_time).total_seconds() * 1000),
+            })
             return {
                 'success': True,
                 'message': 'No orders to sync',
@@ -63,35 +91,89 @@ class NetSuiteConsolidatedSync(models.AbstractModel):
                 'failed': 0
             }
 
-        # Group orders by warehouse/shop
-        orders_by_shop = self._group_orders_by_shop(pos_orders)
+        # CRITICAL VALIDATION: Check if all products have NetSuite IDs
+        _logger.info('[NetSuite EOD Orders] Validating products have NetSuite IDs...')
+        validation_result = self._validate_products_have_netsuite_ids(pos_orders)
+        if not validation_result['valid']:
+            product_list = '\n'.join(['   • ' + p for p in validation_result['products_without_ids'][:10]])
+            if len(validation_result['products_without_ids']) > 10:
+                product_list += f"\n   ... and {len(validation_result['products_without_ids']) - 10} more"
 
-        _logger.info(f'Found {len(orders_by_shop)} shops with {len(pos_orders)} total orders')
+            error_msg = _(
+                f"Cannot sync orders: {len(validation_result['products_without_ids'])} product(s) missing NetSuite IDs:\n\n"
+                f"{product_list}\n\n"
+                "Please add NetSuite ID manually:\n"
+                "Inventory → Products → Edit → Set 'NetSuite ID' field"
+            )
+            _logger.error(f'[NetSuite EOD Orders] Validation failed: {len(validation_result["products_without_ids"])} products missing NetSuite IDs')
+            sync_log.write({
+                'status': 'failed',
+                'error_message': error_msg,
+                'execution_time_ms': int((datetime.now() - start_time).total_seconds() * 1000),
+            })
+            raise ValidationError(error_msg)
+
+        # Group orders by warehouse/shop and date
+        orders_by_shop_and_date = self._group_orders_by_shop(pos_orders)
+
+        _logger.info(f'[NetSuite EOD Orders] Found {len(orders_by_shop_and_date)} shop+date combinations with {len(pos_orders)} total orders')
 
         results = {
             'success': True,
-            'total_shops': len(orders_by_shop),
+            'total_combinations': len(orders_by_shop_and_date),
             'total_orders': len(pos_orders),
             'synced': 0,
             'failed': 0,
-            'errors': []
+            'errors': [],
+            'sync_details': []
         }
 
-        # Process each shop
-        for warehouse_id, shop_orders in orders_by_shop.items():
+        # Process each shop+date combination
+        for (warehouse_id, order_date), shop_orders in orders_by_shop_and_date.items():
             try:
-                self._sync_consolidated_order_for_shop(
-                    config, warehouse_id, shop_orders, target_date
+                warehouse = self.env['stock.warehouse'].browse(warehouse_id)
+                shop_name = warehouse.name
+                _logger.info(f'[NetSuite EOD Orders] Processing: {shop_name} | {order_date} | {len(shop_orders)} orders')
+
+                shop_result = self._sync_consolidated_order_for_shop(
+                    config, warehouse_id, shop_orders, order_date
                 )
                 results['synced'] += 1
-                _logger.info(f'Successfully synced consolidated order for shop {warehouse_id}')
+                results['sync_details'].append({
+                    'shop': shop_name,
+                    'date': str(order_date),
+                    'orders': len(shop_orders),
+                    'status': 'success',
+                    'netsuite_id': shop_result.get('netsuite_id')
+                })
+                _logger.info(f'[NetSuite EOD Orders] ✓ Successfully synced {shop_name} - {order_date}')
             except Exception as e:
                 results['failed'] += 1
-                error_msg = f'Failed to sync shop {warehouse_id}: {str(e)}'
+                error_msg = f'Failed to sync {warehouse.name} - {order_date}: {str(e)}'
                 results['errors'].append(error_msg)
-                _logger.error(error_msg, exc_info=True)
+                results['sync_details'].append({
+                    'shop': warehouse.name if warehouse_id else 'Unknown',
+                    'date': str(order_date),
+                    'orders': len(shop_orders),
+                    'status': 'failed',
+                    'error': str(e)
+                })
+                _logger.error(f'[NetSuite EOD Orders] ✗ {error_msg}', exc_info=True)
 
         results['success'] = results['failed'] == 0
+
+        # Update sync log with final results
+        execution_time_ms = int((datetime.now() - start_time).total_seconds() * 1000)
+        sync_log.write({
+            'status': 'success' if results['success'] else ('partial' if results['synced'] > 0 else 'failed'),
+            'error_message': '\n'.join(results['errors']) if results['errors'] else None,
+            'response_payload': json.dumps(results, indent=2),
+            'notes': f"Synced: {results['synced']}/{results['total_combinations']}, Orders: {results['total_orders']}, Failed: {results['failed']}",
+            'execution_time_ms': execution_time_ms,
+        })
+
+        _logger.info('[NetSuite EOD Orders] ========== SYNC COMPLETED ==========')
+        _logger.info(f'[NetSuite EOD Orders] Results - Synced: {results["synced"]}/{results["total_combinations"]}, Orders: {results["total_orders"]}, Failed: {results["failed"]}')
 
         return results
 
@@ -107,6 +189,8 @@ class NetSuiteConsolidatedSync(models.AbstractModel):
         Returns:
             dict: Sync results
         """
+        _logger.info('[NetSuite EOD Invoices] ========== SYNC STARTED ==========')
+
         config = self.env['netsuite.config'].get_active_config()
 
         if not config.config_consolidate_invoices:
@@ -118,13 +202,34 @@ class NetSuiteConsolidatedSync(models.AbstractModel):
         elif isinstance(target_date, str):
             target_date = datetime.strptime(target_date, '%Y-%m-%d').date()
 
-        _logger.info(f'Starting consolidated invoice sync for date: {target_date}')
+        _logger.info(f'[NetSuite EOD Invoices] Target date: {target_date}, Warehouses: {warehouse_ids or "ALL"}')
+        _logger.info(f'[NetSuite EOD Invoices] Using config: {config.name} (API: {config.api_url})')
+
+        # Create sync log
+        now_utc = fields.Datetime.now()
+        timestamp_str = now_utc.strftime('%Y-%m-%d %H:%M:%S')
+        start_time = datetime.now()
+
+        sync_log = self.env['netsuite.sync.log'].create({
+            'config_id': config.id,
+            'reference': f'EOD Invoices Sync {timestamp_str} (+00:00)',
+            'record_type': 'eod_invoice',
+            'record_id': 0,  # Bulk operation
+            'status': 'processing',
+            'sync_mode': 'manual',
+            'request_method': 'POST',
+        })
 
         # Get orders for target date (invoices are based on orders)
         pos_orders = self._get_orders_for_date(target_date, warehouse_ids)
 
         if not pos_orders:
-            _logger.info(f'No orders found for date {target_date}')
+            _logger.info('[NetSuite EOD Invoices] No orders found for target date')
+            sync_log.write({
+                'status': 'success',
+                'notes': 'No invoices to sync',
+                'execution_time_ms': int((datetime.now() - start_time).total_seconds() * 1000),
+            })
             return {
                 'success': True,
                 'message': 'No invoices to sync',
@@ -134,8 +239,32 @@ class NetSuiteConsolidatedSync(models.AbstractModel):
                 'failed': 0
             }
 
+        # CRITICAL VALIDATION: Check if all products have NetSuite IDs
+        _logger.info('[NetSuite EOD Invoices] Validating products have NetSuite IDs...')
+        validation_result = self._validate_products_have_netsuite_ids(pos_orders)
+        if not validation_result['valid']:
+            product_list = '\n'.join(['   • ' + p for p in validation_result['products_without_ids'][:10]])
+            if len(validation_result['products_without_ids']) > 10:
+                product_list += f"\n   ... and {len(validation_result['products_without_ids']) - 10} more"
+
+            error_msg = _(
+                f"Cannot sync invoices: {len(validation_result['products_without_ids'])} product(s) missing NetSuite IDs:\n\n"
+                f"{product_list}\n\n"
+                "Please add NetSuite ID manually:\n"
+                "Inventory → Products → Edit → Set 'NetSuite ID' field"
+            )
+            _logger.error(f'[NetSuite EOD Invoices] Validation failed: {len(validation_result["products_without_ids"])} products missing NetSuite IDs')
+            sync_log.write({
+                'status': 'failed',
+                'error_message': error_msg,
+                'execution_time_ms': int((datetime.now() - start_time).total_seconds() * 1000),
+            })
+            raise ValidationError(error_msg)
+
         # Group orders by warehouse/shop
         orders_by_shop = self._group_orders_by_shop(pos_orders)
+
+        _logger.info(f'[NetSuite EOD Invoices] Found {len(orders_by_shop)} shops with {len(pos_orders)} total orders')
 
         results = {
             'success': True,
@@ -143,26 +272,75 @@ class NetSuiteConsolidatedSync(models.AbstractModel):
             'total_orders': len(pos_orders),
             'synced': 0,
             'failed': 0,
-            'errors': []
+            'errors': [],
+            'sync_details': []
         }
 
         # Process each shop
         for warehouse_id, shop_orders in orders_by_shop.items():
             try:
-                self._sync_consolidated_invoice_for_shop(
+                warehouse = self.env['stock.warehouse'].browse(warehouse_id)
+                shop_name = warehouse.name
+                _logger.info(f'[NetSuite EOD Invoices] Processing shop: {shop_name} ({len(shop_orders)} orders)')
+
+                shop_result = self._sync_consolidated_invoice_for_shop(
                     config, warehouse_id, shop_orders, target_date
                 )
                 results['synced'] += 1
-                _logger.info(f'Successfully synced consolidated invoice for shop {warehouse_id}')
+                results['sync_details'].append({
+                    'shop': shop_name,
+                    'orders': len(shop_orders),
+                    'status': 'success',
+                    'netsuite_id': shop_result.get('netsuite_invoice_id')
+                })
+                _logger.info(f'[NetSuite EOD Invoices] ✓ Successfully synced {shop_name}')
             except Exception as e:
                 results['failed'] += 1
                 error_msg = f'Failed to sync invoice for shop {warehouse_id}: {str(e)}'
                 results['errors'].append(error_msg)
-                _logger.error(error_msg, exc_info=True)
+                results['sync_details'].append({
+                    'shop': warehouse.name if warehouse_id else 'Unknown',
+                    'orders': len(shop_orders),
+                    'status': 'failed',
+                    'error': str(e)
+                })
+                _logger.error(f'[NetSuite EOD Invoices] ✗ {error_msg}', exc_info=True)
 
         results['success'] = results['failed'] == 0
 
+        # Update sync log with final results
+        execution_time_ms = int((datetime.now() - start_time).total_seconds() * 1000)
+        sync_log.write({
+            'status': 'success' if results['success'] else ('partial' if results['synced'] > 0 else 'failed'),
+            'error_message': '\n'.join(results['errors']) if results['errors'] else None,
+            'response_payload': json.dumps(results, indent=2),
+            'notes': f"Shops: {results['synced']}/{results['total_shops']}, Orders: {results['total_orders']}, Failed: {results['failed']}",
+            'execution_time_ms': execution_time_ms,
+        })
+
+        _logger.info('[NetSuite EOD Invoices] ========== SYNC COMPLETED ==========')
+        _logger.info(f'[NetSuite EOD Invoices] Results - Shops: {results["synced"]}/{results["total_shops"]}, Orders: {results["total_orders"]}, Failed: {results["failed"]}')
+
         return results
+
+    def _get_all_unsynced_orders(self, warehouse_ids=None):
+        """Get ALL past unsynced POS orders (excluding today)"""
+        today_start = datetime.combine(datetime.now().date(), time.min)
+
+        domain = [
+            ('date_order', '<', today_start),  # Exclude today
+            ('state', 'in', ['paid', 'done', 'invoiced']),
+            '|',
+            ('netsuite_sync_status', 'in', ['not_synced', 'failed']),
+            ('netsuite_sync_status', '=', False),
+        ]
+
+        if warehouse_ids:
+            domain.append(('config_id', 'in', warehouse_ids))
+
+        orders = self.env['pos.order'].search(domain, order='date_order asc')
+        _logger.info(f'[NetSuite EOD Orders] Found {len(orders)} unsynced orders from past dates')
+        return orders
 
     def _get_orders_for_date(self, target_date, warehouse_ids=None):
         """Get POS orders for a specific date"""
@@ -181,16 +359,49 @@ class NetSuiteConsolidatedSync(models.AbstractModel):
         return self.env['pos.order'].search(domain)
 
     def _group_orders_by_shop(self, pos_orders):
-        """Group orders by warehouse/shop"""
-        orders_by_shop = defaultdict(lambda: self.env['pos.order'])
+        """Group orders by warehouse/shop, then by date"""
+        # Group by (warehouse_id, date)
+        orders_by_shop_and_date = defaultdict(lambda: self.env['pos.order'])
 
         for order in pos_orders:
             # Get warehouse from session config
             warehouse_id = order.session_id.config_id.warehouse_id.id if order.session_id else None
             if warehouse_id:
-                orders_by_shop[warehouse_id] |= order
+                order_date = order.date_order.date()
+                key = (warehouse_id, order_date)
+                orders_by_shop_and_date[key] |= order
 
-        return dict(orders_by_shop)
+        return dict(orders_by_shop_and_date)
+
+    def _validate_products_have_netsuite_ids(self, pos_orders):
+        """
+        Validate that all products in orders have NetSuite IDs
+
+        Returns:
+            dict: {
+                'valid': True/False,
+                'products_without_ids': ['Product Name 1', 'Product Name 2', ...],
+                'total_products': 10,
+                'products_with_ids': 8
+            }
+        """
+        products_without_ids = set()
+        all_products = set()
+
+        for order in pos_orders:
+            for line in order.lines:
+                product = line.product_id
+                all_products.add(product.id)
+
+                if not product.x_netsuite_id:
+                    products_without_ids.add(f"{product.name} ({product.default_code or 'No Code'})")
+
+        return {
+            'valid': len(products_without_ids) == 0,
+            'products_without_ids': sorted(list(products_without_ids)),
+            'total_products': len(all_products),
+            'products_with_ids': len(all_products) - len(products_without_ids)
+        }
 
     def _sync_consolidated_order_for_shop(self, config, warehouse_id, shop_orders, target_date):
         """
@@ -228,7 +439,7 @@ class NetSuiteConsolidatedSync(models.AbstractModel):
         }
 
         # Send to NetSuite
-        response = self._post_to_netsuite(config, '/api/salesorder', payload)
+        response = self._post_to_netsuite(config, '/app/site/hosting/restlet.nl?action=createSalesOrder', payload)
 
         if response.get('success'):
             netsuite_id = response.get('id')
@@ -243,18 +454,11 @@ class NetSuiteConsolidatedSync(models.AbstractModel):
                 'netsuite_error': False,
             })
 
-            # Log success
-            self.env['netsuite.sync.log'].create({
-                'config_id': config.id,
-                'sync_type': 'consolidated_order',
-                'status': 'success',
-                'start_time': fields.Datetime.now(),
-                'end_time': fields.Datetime.now(),
-                'records_processed': len(shop_orders),
-                'records_success': len(shop_orders),
-                'request_data': json.dumps(payload, indent=2),
-                'response_data': json.dumps(response, indent=2),
-            })
+            return {
+                'netsuite_id': netsuite_id,
+                'netsuite_tran_id': netsuite_tran_id,
+                'success': True
+            }
         else:
             error_msg = response.get('error', 'Unknown error')
             shop_orders.write({
@@ -300,7 +504,7 @@ class NetSuiteConsolidatedSync(models.AbstractModel):
         }
 
         # Send to NetSuite
-        response = self._post_to_netsuite(config, '/api/invoice', payload)
+        response = self._post_to_netsuite(config, '/app/site/hosting/restlet.nl?action=createEODInvoice', payload)
 
         if response.get('success'):
             netsuite_invoice_id = response.get('id')
@@ -311,18 +515,10 @@ class NetSuiteConsolidatedSync(models.AbstractModel):
                 'x_netsuite_invoice_sync_date': fields.Datetime.now(),
             })
 
-            # Log success
-            self.env['netsuite.sync.log'].create({
-                'config_id': config.id,
-                'sync_type': 'consolidated_invoice',
-                'status': 'success',
-                'start_time': fields.Datetime.now(),
-                'end_time': fields.Datetime.now(),
-                'records_processed': len(shop_orders),
-                'records_success': len(shop_orders),
-                'request_data': json.dumps(payload, indent=2),
-                'response_data': json.dumps(response, indent=2),
-            })
+            return {
+                'netsuite_invoice_id': netsuite_invoice_id,
+                'success': True
+            }
         else:
             error_msg = response.get('error', 'Unknown error')
             raise Exception(error_msg)
@@ -330,27 +526,57 @@ class NetSuiteConsolidatedSync(models.AbstractModel):
     def _aggregate_order_lines(self, shop_orders, config):
         """
         Aggregate all order lines by product (sum quantities)
+
+        Raises:
+            ValidationError: If any product is missing NetSuite ID
         """
-        product_totals = defaultdict(lambda: {'quantity': 0, 'amount': 0, 'product_id': None, 'price': 0})
+        product_totals = defaultdict(lambda: {'quantity': 0, 'amount': 0, 'product_id': None, 'name': ''})
+        products_without_netsuite_id = []
 
         for order in shop_orders:
             for line in order.lines:
                 product = line.product_id
-                product_key = product.x_netsuite_id or product.default_code or str(product.id)
+
+                # CRITICAL: Validate that product has NetSuite ID
+                if not product.x_netsuite_id:
+                    if product.name not in products_without_netsuite_id:
+                        products_without_netsuite_id.append(product.name)
+                    continue  # Skip this line item
+
+                product_key = product.x_netsuite_id
 
                 product_totals[product_key]['quantity'] += line.qty
                 product_totals[product_key]['amount'] += line.price_subtotal_incl
                 product_totals[product_key]['product_id'] = product.x_netsuite_id
-                product_totals[product_key]['price'] = line.price_unit
+                product_totals[product_key]['name'] = product.name
+
+        # Raise error if any products are missing NetSuite IDs
+        if products_without_netsuite_id:
+            product_list = '\n'.join([f'   • {p}' for p in products_without_netsuite_id[:15]])
+            if len(products_without_netsuite_id) > 15:
+                product_list += f'\n   ... and {len(products_without_netsuite_id) - 15} more'
+
+            error_msg = _(
+                f'Cannot sync: {len(products_without_netsuite_id)} product(s) missing NetSuite IDs:\n\n'
+                f'{product_list}\n\n'
+                'Please add NetSuite ID manually:\n'
+                'Inventory → Products → Edit → Set "NetSuite ID" field'
+            )
+            _logger.error(f'[NetSuite EOD] Products missing NetSuite IDs: {products_without_netsuite_id}')
+            raise ValidationError(error_msg)
 
         # Convert to NetSuite line format
         lines = []
         for product_key, totals in product_totals.items():
+            # Calculate the rate as average: total_amount / total_quantity
+            # This ensures rate × quantity = amount (consistent, no rounding issues)
+            rate = totals['amount'] / totals['quantity'] if totals['quantity'] else 0
+
             lines.append({
-                'item': totals['product_id'] or product_key,
+                'item': totals['product_id'],  # Always use NetSuite ID (validated above)
                 'quantity': totals['quantity'],
-                'rate': totals['price'],
-                'amount': totals['amount']
+                'rate': round(rate, 2),  # Average rate per unit (tax-inclusive)
+                'amount': round(totals['amount'], 2)  # Total amount (tax-inclusive)
             })
 
         return lines

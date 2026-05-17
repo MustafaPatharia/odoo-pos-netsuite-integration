@@ -19,13 +19,14 @@ class NetSuiteProductSync(models.AbstractModel):
     _description = 'NetSuite Product Sync Service'
 
     @api.model
-    def sync_products_from_netsuite(self, limit=None, product_ids=None):
+    def sync_products_from_netsuite(self, limit=None, product_ids=None, sync_mode='manual'):
         """
         Fetch products/items from NetSuite and create/update in Odoo
 
         Args:
             limit: Maximum number of products to fetch (for testing)
             product_ids: List of specific NetSuite item IDs to sync
+            sync_mode: 'manual' (button click) or 'scheduled' (cron job)
 
         Returns:
             dict: {
@@ -59,7 +60,8 @@ class NetSuiteProductSync(models.AbstractModel):
             'record_type': 'product',
             'record_id': 0,  # Bulk operation
             'status': 'processing',
-            'sync_mode': 'manual',
+            'sync_mode': sync_mode,
+            'operation': 'fetch',
             'request_method': 'GET',  # Product fetch uses GET
         })
 
@@ -75,7 +77,34 @@ class NetSuiteProductSync(models.AbstractModel):
         try:
             # Fetch products from NetSuite
             _logger.info('[NetSuite Product Sync] Fetching products from NetSuite...')
-            products_data, fetch_metadata = self._fetch_products_from_netsuite(config, limit, product_ids)
+            try:
+                products_data, fetch_metadata = self._fetch_products_from_netsuite(config, limit, product_ids)
+            except Exception as fetch_error:
+                # If fetch fails, try to extract metadata from the error context
+                # This happens when the request fails (404, timeout, etc.)
+                fetch_metadata = getattr(fetch_error, 'metadata', {
+                    'url': config.api_url,
+                    'params': {},
+                    'response_code': None,
+                    'execution_time_ms': 0
+                })
+                # Update sync log with whatever metadata we have
+                error_msg = f'Product sync failed: {str(fetch_error)}'
+                sync_log.write({
+                    'request_url': fetch_metadata.get('url'),
+                    'request_method': 'GET',
+                    'request_payload': json.dumps(fetch_metadata.get('params', {})),
+                    'response_code': fetch_metadata.get('response_code'),
+                    'execution_time_ms': fetch_metadata.get('execution_time_ms'),
+                    'status': 'failed',
+                    'error_message': error_msg
+                })
+
+                _logger.error(f'[NetSuite Product Sync] ========== SYNC FAILED ==========')
+                _logger.error(f'[NetSuite Product Sync] {error_msg}')
+
+                results['errors'].append(error_msg)
+                return results  # Return instead of re-raising
 
             # Update sync log with request details
             sync_log.write({
@@ -100,6 +129,7 @@ class NetSuiteProductSync(models.AbstractModel):
 
             # Process each product
             ProductTemplate = self.env['product.template']
+            StockQuant = self.env['stock.quant']
 
             for product_data in products_data:
                 try:
@@ -111,6 +141,7 @@ class NetSuiteProductSync(models.AbstractModel):
                     base_price = float(product_data.get('baseprice', 0.0))
                     cost_estimate = float(product_data.get('cost', 0.0))
                     is_inactive = product_data.get('isinactive', False)
+                    quantity_available = float(product_data.get('quantityavailable', 0.0))
 
                     # Search for existing product by NetSuite ID
                     existing_product = ProductTemplate.search([
@@ -126,6 +157,7 @@ class NetSuiteProductSync(models.AbstractModel):
                         'standard_price': cost_estimate,
                         'type': 'product',  # Storable product
                         'active': not is_inactive,
+                        'available_in_pos': True,  # Make product available in POS
                         'x_netsuite_id': netsuite_id,
                         'x_netsuite_last_sync': fields.Datetime.now(),
                     }
@@ -133,13 +165,37 @@ class NetSuiteProductSync(models.AbstractModel):
                     if existing_product:
                         # Update existing product
                         existing_product.write(product_vals)
+                        product = existing_product
                         results['updated'] += 1
-                        _logger.info(f'[NetSuite Product Sync] ✓ Updated: {display_name} (ID: {netsuite_id}, Price: ${base_price})')
+                        _logger.info(f'[NetSuite Product Sync] ✓ Updated: {display_name} (ID: {netsuite_id}, Price: ${base_price}, Qty: {quantity_available})')
                     else:
                         # Create new product
-                        ProductTemplate.create(product_vals)
+                        product = ProductTemplate.create(product_vals)
                         results['created'] += 1
-                        _logger.info(f'[NetSuite Product Sync] ✓ Created: {display_name} (ID: {netsuite_id}, Price: ${base_price})')
+                        _logger.info(f'[NetSuite Product Sync] ✓ Created: {display_name} (ID: {netsuite_id}, Price: ${base_price}, Qty: {quantity_available})')
+
+                    # Update stock quantity if product is storable
+                    if product.type == 'product' and quantity_available is not None:
+                        # Get the default warehouse location
+                        warehouse = self.env['stock.warehouse'].search([
+                            ('company_id', '=', self.env.company.id)
+                        ], limit=1)
+
+                        if warehouse:
+                            location = warehouse.lot_stock_id
+                            product_product = product.product_variant_ids[:1]
+
+                            if product_product:
+                                # Update or create stock quant
+                                StockQuant.with_context(inventory_mode=True)._update_available_quantity(
+                                    product_product,
+                                    location,
+                                    quantity_available,
+                                    lot_id=None,
+                                    package_id=None,
+                                    owner_id=None
+                                )
+                                _logger.info(f'[NetSuite Product Sync]   └─ Stock updated: {quantity_available} units in {location.name}')
 
                 except Exception as e:
                     results['failed'] += 1
@@ -167,13 +223,13 @@ class NetSuiteProductSync(models.AbstractModel):
             _logger.error(f'[NetSuite Product Sync] ========== SYNC FAILED ==========')
             _logger.error(f'[NetSuite Product Sync] {error_msg}', exc_info=True)
 
-            # Try to get fetch metadata if available
+            # Try to get fetch metadata if error happened during fetch
             update_vals = {
                 'status': 'failed',
                 'error_message': error_msg
             }
 
-            # If we have fetch metadata from exception context, include it
+            # Check if fetch was attempted and metadata exists
             if 'fetch_metadata' in locals():
                 update_vals.update({
                     'request_url': fetch_metadata.get('url'),
@@ -271,7 +327,9 @@ class NetSuiteProductSync(models.AbstractModel):
                 'execution_time_ms': execution_time_ms,
                 'error': str(e)
             }
-            raise UserError(_('NetSuite API request timed out. Please try again.'))
+            error = UserError(_('NetSuite API request timed out. Please try again.'))
+            error.metadata = metadata  # Attach metadata to exception
+            raise error
         except requests.exceptions.ConnectionError as e:
             execution_time_ms = int((time.time() - start_time) * 1000)
             metadata = {
@@ -281,7 +339,9 @@ class NetSuiteProductSync(models.AbstractModel):
                 'execution_time_ms': execution_time_ms,
                 'error': str(e)
             }
-            raise UserError(_('Could not connect to NetSuite API. Check your network connection.'))
+            error = UserError(_('Could not connect to NetSuite API. Check your network connection.'))
+            error.metadata = metadata  # Attach metadata to exception
+            raise error
         except requests.exceptions.HTTPError as e:
             execution_time_ms = int((time.time() - start_time) * 1000)
             metadata = {
@@ -291,7 +351,9 @@ class NetSuiteProductSync(models.AbstractModel):
                 'execution_time_ms': execution_time_ms,
                 'error': str(e)
             }
-            raise UserError(_('NetSuite API error: %s') % str(e))
+            error = UserError(_('NetSuite API error: %s') % str(e))
+            error.metadata = metadata  # Attach metadata to exception
+            raise error
         except Exception as e:
             execution_time_ms = int((time.time() - start_time) * 1000)
             metadata = {
@@ -301,7 +363,9 @@ class NetSuiteProductSync(models.AbstractModel):
                 'execution_time_ms': execution_time_ms,
                 'error': str(e)
             }
-            raise UserError(_('Error fetching products from NetSuite: %s') % str(e))
+            error = UserError(_('Error fetching products from NetSuite: %s') % str(e))
+            error.metadata = metadata  # Attach metadata to exception
+            raise error
 
     def _get_netsuite_headers(self, config):
         """
@@ -341,14 +405,13 @@ class ProductTemplate(models.Model):
 
     x_netsuite_id = fields.Char(
         string='NetSuite ID',
-        readonly=True,
         copy=False,
-        help='NetSuite Internal ID (for sync tracking). Item reference is stored in Internal Reference field.',
+        help='NetSuite Internal ID (e.g., "12345"). Can be set manually or auto-populated when syncing from NetSuite. Required for EOD order/invoice sync.',
         index=True
     )
 
     x_netsuite_last_sync = fields.Datetime(
-        string='Last Fetched from NetSuite',
+        string='Last Fetched',
         readonly=True,
         copy=False,
         help='Timestamp when product was last imported from NetSuite'

@@ -26,56 +26,13 @@
             <xpath expr="//notebook" position="inside">
                 <page string="NetSuite" name="netsuite_info">
                     <group>
-                        <group string="NetSuite Information">
-                            <field name="x_netsuite_id" readonly="1"/>
+                        <group string="NetSuite Sync Information">
+                            <field name="x_netsuite_id" placeholder="e.g., 12345"/>
                             <field name="x_netsuite_last_sync" readonly="1" invisible="not x_netsuite_id"/>
                         </group>
                     </group>
                 </page>
             </xpath>
-        </field>
-    </record>
-
-    <!-- Action to Fetch Products from NetSuite - Standalone action -->
-    <record id="action_fetch_products_from_netsuite" model="ir.actions.server">
-        <field name="name">Fetch Products from NetSuite</field>
-        <field name="model_id" ref="product.model_product_template"/>
-        <field name="state">code</field>
-        <field name="code">
-result = env['netsuite.product.sync'].sync_products_from_netsuite()
-if result.get('success'):
-    # Build message with only non-zero counts
-    parts = []
-    if result['created'] > 0:
-        parts.append(f"Created: {result['created']}")
-    if result['updated'] > 0:
-        parts.append(f"Updated: {result['updated']}")
-    if result['failed'] > 0:
-        parts.append(f"Failed: {result['failed']}")
-
-    message = ', '.join(parts) if parts else 'No changes'
-
-    action = {
-        'type': 'ir.actions.client',
-        'tag': 'display_notification',
-        'params': {
-            'title': 'Products Fetched Successfully',
-            'message': message,
-            'type': 'success' if result['failed'] == 0 else 'warning',
-            'sticky': False,
-        }
-    }
-else:
-    action = {
-        'type': 'ir.actions.client',
-        'tag': 'display_notification',
-        'params': {
-            'title': 'Failed to Fetch Products',
-            'message': '\n'.join(result.get('errors', ['Unknown error'])),
-            'type': 'danger',
-            'sticky': True,
-        }
-    }
         </field>
     </record>
 

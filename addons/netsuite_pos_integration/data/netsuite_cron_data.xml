@@ -11,7 +11,7 @@
             <field name="name">NetSuite: Fetch Products Hourly</field>
             <field name="model_id" ref="model_netsuite_product_sync"/>
             <field name="state">code</field>
-            <field name="code">result = model.sync_products_from_netsuite()</field>
+            <field name="code">result = model.sync_products_from_netsuite(sync_mode='scheduled')</field>
             <field name="interval_number">1</field>
             <field name="interval_type">hours</field>
             <field name="numbercall">-1</field>
@@ -25,8 +25,8 @@
             <field name="name">NetSuite: Fetch Products Every 1min (TESTING)</field>
             <field name="model_id" ref="model_netsuite_product_sync"/>
             <field name="state">code</field>
-            <field name="code">result = model.sync_products_from_netsuite()</field>
-            <field name="interval_number">30</field>
+            <field name="code">result = model.sync_products_from_netsuite(sync_mode='scheduled')</field>
+            <field name="interval_number">1</field>
             <field name="interval_type">minutes</field>
             <field name="numbercall">-1</field>
             <field name="active" eval="True"/>
@@ -43,7 +43,7 @@
             <field name="code">
 config = env['netsuite.config'].search([('active', '=', True)], limit=1)
 if config and config.config_integration_mode == 'scheduled':
-    result = model.sync_consolidated_orders()
+    result = model.sync_consolidated_orders(sync_all_dates=False)
             </field>
             <field name="interval_number">1</field>
             <field name="interval_type">days</field>

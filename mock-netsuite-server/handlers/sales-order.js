@@ -19,8 +19,9 @@ function handleCreateSalesOrder(req, res, payload) {
     }
 
     // Generate NetSuite internal ID
-    const internalId = uuidv4();
-    const tranId = `SO-${Date.now()}`;
+    const internalId = Math.floor(10000 + Math.random() * 90000).toString();
+    const tranId = `SO-${Date.now().toString().slice(-6)}`;
+    const tranDate = orderData.tranDate || new Date().toISOString().split('T')[0];
 
     // Calculate totals
     const subTotal = orderData.items.reduce((sum, item) =>
@@ -28,11 +29,16 @@ function handleCreateSalesOrder(req, res, payload) {
 
     // Create sales order record
     const salesOrder = {
+      id: internalId,
       internalId: internalId,
       tranId: tranId,
+      recordType: orderData.recordType || 'salesorder',
       entity: orderData.entity,
-      tranDate: orderData.tranDate || new Date().toISOString().split('T')[0],
-      currency: orderData.currency || 'USD',
+      tranDate: tranDate,
+      subsidiary: orderData.subsidiary,
+      department: orderData.department,
+      location: orderData.location,
+      currency: orderData.currency || 'AED',
       status: orderData.status || 'Pending Fulfillment',
       items: orderData.items.map((item, index) => ({
         line: index + 1,
@@ -45,13 +51,22 @@ function handleCreateSalesOrder(req, res, payload) {
       subTotal: subTotal,
       total: orderData.total || subTotal,
       memo: orderData.memo || '',
-      externalId: orderData.externalId || `ODOO-${internalId}`,
+      custbody_pos_shop: orderData.custbody_pos_shop,
+      custbody_pos_date: orderData.custbody_pos_date,
+      custbody_pos_order_count: orderData.custbody_pos_order_count,
+      externalId: orderData.externalId || `ODOO-SO-${internalId}`,
       createdDate: new Date().toISOString(),
-      lastModifiedDate: new Date().toISOString()
+      lastModifiedDate: new Date().toISOString(),
+      originalRequest: orderData
     };
 
     // Store in mock database
     mockDatabase.salesOrders.set(internalId, salesOrder);
+    
+    // Save to JSON file (if available from app.locals)
+    if (req.app && req.app.locals && req.app.locals.saveToFile) {
+      req.app.locals.saveToFile('order', tranDate, salesOrder);
+    }
 
     // Log successful sync
     logSync('CREATE_SALES_ORDER', 'success', salesOrder);
@@ -59,6 +74,7 @@ function handleCreateSalesOrder(req, res, payload) {
     // Return NetSuite-like response
     res.status(201).json({
       success: true,
+      id: internalId,
       internalId: internalId,
       tranId: tranId,
       externalId: salesOrder.externalId,

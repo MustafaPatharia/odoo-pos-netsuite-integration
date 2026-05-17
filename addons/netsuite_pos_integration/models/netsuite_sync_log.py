@@ -31,6 +31,7 @@ class NetSuiteSyncLog(models.Model):
         ('customer', 'Customer'),
         ('payment', 'Payment'),
         ('eod_invoice', 'End-of-Day Invoice'),
+        ('eod_order', 'End-of-Day Order'),
         ('product', 'Product Import'),
     ], string='Record Type', required=True, index=True)
 
@@ -53,12 +54,14 @@ class NetSuiteSyncLog(models.Model):
         ('realtime', 'Real-time'),
         ('batch', 'Batch'),
         ('manual', 'Manual'),
+        ('scheduled', 'Scheduled'),
     ], string='Sync Mode')
 
     operation = fields.Selection([
         ('create', 'Create'),
         ('update', 'Update'),
         ('delete', 'Delete'),
+        ('fetch', 'Fetch'),
     ], string='Operation', default='create')
 
     request_url = fields.Char(string='Request URL')
