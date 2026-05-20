@@ -215,6 +215,133 @@ class NetSuiteAPIClient(models.AbstractModel):
         return response_data
 
     @api.model
+    def create_invoice(self, invoice, config):
+        """
+        Create Invoice in NetSuite from account.move (customer invoice)
+        Uses NetSuite Standard REST API
+        """
+        # Get subsidiary mapping (from POS order or default)
+        warehouse_id = None
+        pos_order = self.env['pos.order'].search([('account_move', '=', invoice.id)], limit=1)
+        
+        if pos_order and pos_order.config_id and pos_order.config_id.warehouse_id:
+            warehouse_id = pos_order.config_id.warehouse_id.id
+
+        SubsidiaryMapping = self.env['netsuite.subsidiary.mapping']
+        subsidiary_data = SubsidiaryMapping.get_subsidiary_for_warehouse(warehouse_id) if warehouse_id else None
+
+        if not subsidiary_data:
+            subsidiary_data = {
+                'subsidiary_id': '1',
+                'department_id': None,
+                'location_id': None
+            }
+
+        # Get payment method from POS order
+        payment_method_id = '1'  # Default
+        if pos_order and pos_order.payment_ids:
+            payment = pos_order.payment_ids[0]
+            mapping = self.env['netsuite.payment.method.mapping'].search([
+                ('odoo_payment_method_id', '=', payment.payment_method_id.id)
+            ], limit=1)
+            if mapping:
+                payment_method_id = mapping.netsuite_payment_method_id
+
+        # Prepare invoice payload
+        invoice_data = {
+            'entity': {'id': '1'},  # Default customer - should be configurable
+            'tranDate': invoice.invoice_date.strftime('%Y-%m-%d') if invoice.invoice_date else datetime.now().strftime('%Y-%m-%d'),
+            'subsidiary': {'id': str(subsidiary_data['subsidiary_id'])},
+            'currency': {'id': '1'},  # AED currency
+            'paymentMethod': {'id': str(payment_method_id)},
+            'memo': f'Odoo Invoice: {invoice.name}',
+        }
+
+        # Add optional classification fields
+        if subsidiary_data.get('department_id'):
+            invoice_data['department'] = {'id': str(subsidiary_data['department_id'])}
+        if subsidiary_data.get('location_id'):
+            invoice_data['location'] = {'id': str(subsidiary_data['location_id'])}
+
+        # Add line items
+        items = []
+        for line in invoice.invoice_line_ids:
+            if line.display_type in ('line_section', 'line_note'):
+                continue
+            
+            product = line.product_id
+            if not product or not product.x_netsuite_id:
+                _logger.warning(f'Skipping line without NetSuite ID: {line.name}')
+                continue
+
+            items.append({
+                'item': {'id': str(product.x_netsuite_id)},
+                'quantity': line.quantity,
+                'rate': round(line.price_unit, 2),
+                'amount': round(line.price_subtotal, 2),
+                'description': line.name,
+                'taxCode': {'id': '5'}  # Default tax code
+            })
+
+        if not items:
+            raise UserError(_('Invoice has no valid line items with NetSuite IDs'))
+
+        invoice_data['item'] = {'items': items}
+
+        # Add custom fields
+        invoice_data['custbody_odoo_invoice_ids'] = [invoice.id]
+        invoice_data['custbody_odoo_invoice_count'] = 1
+
+        # Make API request to NetSuite Standard REST API
+        endpoint = '/services/rest/record/v1/invoice'
+        success, response_data, error_msg, status_code, execution_time = self._make_request(
+            config, endpoint, 'POST', invoice_data
+        )
+
+        # NetSuite Standard REST API returns {id, tranId, links} on success (no 'success' field)
+        # Check for 'id' field to determine success
+        if response_data.get('id'):
+            success = True
+            netsuite_id = response_data.get('id')
+            netsuite_tran_id = response_data.get('tranId')
+        else:
+            success = False
+            netsuite_id = None
+            netsuite_tran_id = None
+            if not error_msg:
+                error_msg = response_data.get('error', 'Unknown error')
+
+        # Log the sync
+        log_status = 'success' if success else 'failed'
+
+        self._log_sync(
+            config, invoice.name, 'invoice', invoice.id, 'account.move',
+            log_status, 'create', f"{config.api_url}{endpoint}", 'POST',
+            invoice_data, response_data, error_msg, status_code, execution_time,
+            netsuite_id, netsuite_tran_id, sync_mode='realtime'
+        )
+
+        # Update invoice
+        if success:
+            invoice.write({
+                'netsuite_sync_status': 'synced',
+                'netsuite_id': netsuite_id,
+                'netsuite_tran_id': netsuite_tran_id,
+                'netsuite_sync_date': datetime.now(),
+                'netsuite_error': False,
+            })
+            _logger.info(f'[NetSuite Invoice Realtime] ✓ Synced {invoice.name} → NetSuite ID: {netsuite_id}')
+        else:
+            invoice.write({
+                'netsuite_sync_status': 'failed',
+                'netsuite_error': error_msg,
+            })
+            _logger.error(f'[NetSuite Invoice Realtime] ✗ Failed to sync {invoice.name}: {error_msg}')
+            raise UserError(_('NetSuite Invoice Sync Failed: %s') % error_msg)
+
+        return response_data
+
+    @api.model
     def create_customer(self, partner, config):
         """
         Create Customer in NetSuite from Partner

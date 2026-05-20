@@ -71,13 +71,13 @@ if not config or not config.config_manual_execution_enabled:
     }
 else:
     try:
-        result = env['netsuite.consolidated.sync'].sync_consolidated_orders()
+        result = env['netsuite.orders.sync'].sync_orders()
 
         if result.get('success'):
             # Determine actual sync mode used
             is_realtime = config.config_integration_mode == 'realtime'
             sync_mode_label = 'Individual (1:1 - Realtime Fallback)' if is_realtime else ('Consolidated (N:1)' if config.config_consolidate_orders else 'Individual (1:1)')
-            
+
             message = 'Successfully synced orders!\n\n'
             message += f"Synced: {result.get('synced', 0)}/{result.get('total_combinations', 0)}\n"
             message += f"Total orders: {result.get('total_orders', 0)}\n"
@@ -150,13 +150,13 @@ if not config or not config.config_manual_execution_enabled:
     }
 else:
     try:
-        result = env['netsuite.consolidated.sync'].sync_consolidated_invoices()
+        result = env['netsuite.invoices.sync'].sync_invoices()
 
         if result.get('success'):
             # Determine actual sync mode used
             is_realtime = config.config_integration_mode == 'realtime'
             sync_mode_label = 'Individual (1:1 - Realtime Fallback)' if is_realtime else ('Consolidated (N:1)' if config.config_consolidate_invoices else 'Individual (1:1)')
-            
+
             message = 'Successfully synced invoices!\n\n'
             message += f"Groups synced: {result.get('synced', 0)}/{result.get('total_groups', 0)}\n"
             message += f"Total invoices: {result.get('total_invoices', 0)}\n"

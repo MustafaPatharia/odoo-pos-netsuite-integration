@@ -201,6 +201,8 @@ class NetSuiteSyncQueue(models.Model):
                 # Process based on record type
                 if queue_item.record_type == 'sales_order':
                     result = NetSuiteAPI.create_sales_order(source_record, queue_item.config_id)
+                elif queue_item.record_type == 'invoice':
+                    result = NetSuiteAPI.create_invoice(source_record, queue_item.config_id)
                 elif queue_item.record_type == 'customer':
                     result = NetSuiteAPI.create_customer(source_record, queue_item.config_id)
                 elif queue_item.record_type == 'payment':

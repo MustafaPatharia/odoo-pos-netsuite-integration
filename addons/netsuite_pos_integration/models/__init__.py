@@ -7,7 +7,6 @@ from . import netsuite_sync_log
 from . import netsuite_product_sync
 from . import netsuite_orders_sync
 from . import netsuite_invoices_sync
-from . import netsuite_consolidated_sync  # Backward compatibility wrapper
 from . import pos_order
 from . import res_partner
 from . import account_move
