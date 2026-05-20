@@ -304,13 +304,13 @@ Always ensure Order Sync completes before Invoice Sync:
 
 ## Summary
 
-✅ **Complete financial picture** - Invoices with payment breakdowns
-✅ **Matches Order Sync pattern** - One invoice per shop per day
-✅ **Payment reconciliation** - Aggregated by payment method
-✅ **Automatic daily sync** - Runs after order sync
-✅ **Full audit trail** - Every invoice logged with details
-✅ **Production-ready** - Comprehensive error handling and validation
+**Complete financial picture** - Invoices with payment breakdowns
+**Matches Order Sync pattern** - One invoice per shop per day
+**Payment reconciliation** - Aggregated by payment method
+**Automatic daily sync** - Runs after order sync
+**Full audit trail** - Every invoice logged with details
+**Production-ready** - Comprehensive error handling and validation
 ---
 
-**Last Updated:** May 17, 2026  
+**Last Updated:** May 17, 2026
 **Version:** 1.0

@@ -32,6 +32,16 @@ class NetSuiteConfig(models.Model):
     )
 
     # ============================================
+    # LOCAL CONFIGURATION (Stored in Odoo)
+    # ============================================
+
+    sync_only_pos_invoices = fields.Boolean(
+        string='Sync Only POS Invoices',
+        default=True,
+        help='If enabled, only invoices linked to POS orders will be synced to NetSuite. Regular invoices will be skipped.'
+    )
+
+    # ============================================
     # CREDENTIALS ONLY - Nothing else stored here
     # ============================================
 
@@ -174,19 +184,6 @@ class NetSuiteConfig(models.Model):
         store=False
     )
 
-    # Batch Processing
-    config_order_batch_size = fields.Integer(
-        string='Order Batch Size',
-        compute='_compute_netsuite_config_fields',
-        store=False
-    )
-
-    config_invoice_batch_size = fields.Integer(
-        string='Invoice Batch Size',
-        compute='_compute_netsuite_config_fields',
-        store=False
-    )
-
     config_product_batch_size = fields.Integer(
         string='Product Batch Size',
         compute='_compute_netsuite_config_fields',
@@ -269,18 +266,6 @@ class NetSuiteConfig(models.Model):
         store=False
     )
 
-    config_aggregate_line_items = fields.Boolean(
-        string='Aggregate Line Items',
-        compute='_compute_netsuite_config_fields',
-        store=False
-    )
-
-    config_group_by_product = fields.Boolean(
-        string='Group By Product',
-        compute='_compute_netsuite_config_fields',
-        store=False
-    )
-
     # ============================================
     # Methods
     # ============================================
@@ -305,8 +290,6 @@ class NetSuiteConfig(models.Model):
                 'config_sync_on_invoice_validated': False,
                 'config_manual_execution_enabled': True,
                 'config_allow_retry_failed': True,
-                'config_order_batch_size': 100,
-                'config_invoice_batch_size': 100,
                 'config_product_batch_size': 50,
                 'config_send_email_on_failure': False,
                 'config_send_email_on_success': False,
@@ -320,8 +303,6 @@ class NetSuiteConfig(models.Model):
                 'config_api_rate_limit': 60,
                 'config_consolidate_orders': True,
                 'config_consolidate_invoices': True,
-                'config_aggregate_line_items': True,
-                'config_group_by_product': True,
             }
 
             if not record.netsuite_config:
@@ -361,10 +342,8 @@ class NetSuiteConfig(models.Model):
                 record.config_manual_execution_enabled = manual.get('enabled', defaults['config_manual_execution_enabled'])
                 record.config_allow_retry_failed = manual.get('allow_retry_failed', defaults['config_allow_retry_failed'])
 
-                # Batch Processing
+                # Batch Processing (product only)
                 batch = config.get('batch_processing', {})
-                record.config_order_batch_size = batch.get('order_batch_size', defaults['config_order_batch_size'])
-                record.config_invoice_batch_size = batch.get('invoice_batch_size', defaults['config_invoice_batch_size'])
                 record.config_product_batch_size = batch.get('product_batch_size', defaults['config_product_batch_size'])
 
                 # Notifications
@@ -391,8 +370,6 @@ class NetSuiteConfig(models.Model):
                 consolidation = config.get('consolidation_rules', {})
                 record.config_consolidate_orders = consolidation.get('consolidate_orders_per_shop_per_day', defaults['config_consolidate_orders'])
                 record.config_consolidate_invoices = consolidation.get('consolidate_invoices_per_shop_per_day', defaults['config_consolidate_invoices'])
-                record.config_aggregate_line_items = consolidation.get('aggregate_line_items', defaults['config_aggregate_line_items'])
-                record.config_group_by_product = consolidation.get('group_by_product', defaults['config_group_by_product'])
 
             except Exception as e:
                 _logger.error(f'Error parsing NetSuite config JSON: {str(e)}')

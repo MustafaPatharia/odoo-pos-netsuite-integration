@@ -8,4 +8,5 @@ from . import netsuite_product_sync
 from . import netsuite_consolidated_sync
 from . import pos_order
 from . import res_partner
+from . import account_move
 from . import netsuite_api_client

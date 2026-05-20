@@ -1,7 +1,4 @@
 {
-  "db": "odoo_netsuite",
-  "login": "admin",
-  "password": "admin",
   "configuration": {
     "integration_mode": "scheduled",
     "realtime_settings": {

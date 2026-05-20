@@ -137,9 +137,11 @@ class NetSuiteAPIClient(models.AbstractModel):
             'netsuite_tran_id': netsuite_tran_id,
         }
 
-        # Log payload if debug logging is enabled in NetSuite config
-        if config.config_debug_logging:
+        # Log payloads based on configuration settings
+        if config.config_log_request_payload or config.config_debug_logging:
             log_vals['request_payload'] = json.dumps(request_data, indent=2) if request_data else ''
+        
+        if config.config_log_response_payload or config.config_debug_logging:
             log_vals['response_payload'] = json.dumps(response_data, indent=2) if response_data else ''
 
         if error_msg:

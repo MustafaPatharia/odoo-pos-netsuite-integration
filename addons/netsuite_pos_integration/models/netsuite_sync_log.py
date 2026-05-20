@@ -28,6 +28,7 @@ class NetSuiteSyncLog(models.Model):
 
     record_type = fields.Selection([
         ('sales_order', 'Sales Order'),
+        ('invoice', 'Invoice'),
         ('customer', 'Customer'),
         ('payment', 'Payment'),
         ('eod_invoice', 'End-of-Day Invoice'),
@@ -146,6 +147,47 @@ class NetSuiteSyncLog(models.Model):
 
         queue = self.env['netsuite.sync.queue'].create(queue_vals)
         queue._process_queue_items()
+
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': 'Retry Queued',
+                'message': f'Sync retry has been queued for {self.reference}',
+                'type': 'success',
+                'sticky': False,
+            }
+        }
+
+    def action_delete_log(self):
+        """Delete individual sync log"""
+        self.ensure_one()
+        self.unlink()
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': 'Log Deleted',
+                'message': 'Sync log has been deleted successfully',
+                'type': 'success',
+                'sticky': False,
+            }
+        }
+
+    def action_delete_selected_logs(self):
+        """Delete multiple selected sync logs"""
+        count = len(self)
+        self.unlink()
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': 'Logs Deleted',
+                'message': f'{count} sync log(s) have been deleted successfully',
+                'type': 'success',
+                'sticky': False,
+            }
+        }
 
         return {
             'type': 'ir.actions.client',

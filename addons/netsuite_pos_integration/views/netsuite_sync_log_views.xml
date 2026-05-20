@@ -10,6 +10,8 @@
                 <header>
                     <button name="action_retry_sync" string="Retry Sync" type="object"
                             class="btn-primary" invisible="status == 'success'"/>
+                    <button name="action_delete_log" string="Delete" type="object"
+                            class="btn-secondary" confirm="Are you sure you want to delete this sync log?"/>
                     <field name="status" widget="statusbar"/>
                 </header>
                 <sheet>
@@ -73,7 +75,11 @@
         <field name="arch" type="xml">
             <tree string="Sync Logs" decoration-success="status == 'success'"
                   decoration-danger="status == 'failed'" decoration-warning="status == 'warning'"
-                  create="false">
+                  create="false" multi_edit="1">
+                <header>
+                    <button name="action_delete_selected_logs" string="Delete Selected" type="object"
+                            class="btn-danger" confirm="Are you sure you want to delete the selected sync logs?"/>
+                </header>
                 <field name="create_date"/>
                 <field name="reference"/>
                 <field name="record_type"/>

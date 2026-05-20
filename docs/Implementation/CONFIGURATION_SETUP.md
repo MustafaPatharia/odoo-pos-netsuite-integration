@@ -95,8 +95,6 @@ Content-Type: application/json
 
 | Property | Type | Valid Values | Default |
 |----------|------|--------------|---------|
-| `order_batch_size` | integer | `1` to `500` | `100` |
-| `invoice_batch_size` | integer | `1` to `500` | `100` |
 | `product_batch_size` | integer | `1` to `200` | `50` |
 
 ---
@@ -142,8 +140,6 @@ Content-Type: application/json
 |----------|------|--------------|---------|
 | `consolidate_orders_per_shop_per_day` | boolean | `true` \| `false` | `true` |
 | `consolidate_invoices_per_shop_per_day` | boolean | `true` \| `false` | `true` |
-| `aggregate_line_items` | boolean | `true` \| `false` | `true` |
-| `group_by_product` | boolean | `true` \| `false` | `true` |
 
 ---
 
@@ -219,8 +215,6 @@ curl -X POST http://localhost:8069/api/netsuite/config/update \
       "backoff_multiplier": 2
     },
     "batch_processing": {
-      "order_batch_size": 100,
-      "invoice_batch_size": 100,
       "product_batch_size": 50
     },
     "notification": {
@@ -244,9 +238,7 @@ curl -X POST http://localhost:8069/api/netsuite/config/update \
     },
     "consolidation_rules": {
       "consolidate_orders_per_shop_per_day": true,
-      "consolidate_invoices_per_shop_per_day": true,
-      "aggregate_line_items": true,
-      "group_by_product": true
+      "consolidate_invoices_per_shop_per_day": true
     }
   },
   "metadata": {

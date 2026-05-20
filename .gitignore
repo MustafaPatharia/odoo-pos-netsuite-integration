@@ -49,6 +49,11 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+# Agent & Graphify (local only)
+graphify-out/
+.instructions.md
+.agent-workflow.md
+
 # Mock NetSuite Server
 mock-netsuite-server/node_modules/
 mock-netsuite-server/storage/

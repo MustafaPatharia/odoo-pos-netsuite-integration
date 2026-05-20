@@ -1,31 +1,34 @@
 # Odoo POS - NetSuite Integration
 
-Sync Odoo Point of Sale orders with NetSuite ERP automatically.
+Enterprise-grade integration between Odoo Point of Sale and Oracle NetSuite ERP.
 
 ## Overview
 
-This module creates **one consolidated invoice per shop per day** in NetSuite instead of syncing individual orders. All business logic and configuration are managed by NetSuite - Odoo only stores credentials.
+This module provides seamless synchronization between Odoo POS and NetSuite, supporting **consolidated daily invoicing**, **real-time product sync**, and **flexible configuration** managed through NetSuite.
 
 ### Key Features
-- ✅ End-of-day consolidated invoicing (one invoice per shop)
-- ✅ Hourly product/item synchronization
-- ✅ Automated cron jobs (hourly items, daily invoices)
-- ✅ Manual batch sync from UI
-- ✅ Complete audit logging
-- ✅ Mock NetSuite server for testing
+
+- ✅ **Consolidated End-of-Day Invoicing** - One invoice per shop per day in NetSuite
+- ✅ **Hourly Product Synchronization** - Automatic product catalog sync from NetSuite
+- ✅ **NetSuite-Controlled Configuration** - All business logic managed in NetSuite
+- ✅ **Manual Batch Operations** - Sync selected orders on-demand
+- ✅ **Complete Audit Trail** - Detailed sync logs and status tracking
+- ✅ **Queue-Based Processing** - Background job processing with retry logic
+- ✅ **Mock NetSuite Server** - Full testing environment included
 
 ## Architecture
 
-**Simple Client-Server Pattern:**
-- **Odoo (Client)**: Stores only NetSuite credentials, fetches configuration from NetSuite
-- **NetSuite (Server)**: Contains all business logic, retry policies, and sync rules
-- **Mock Server**: Simulates NetSuite RESTlets for development/testing
+**Client-Server Design Pattern:**
 
-See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed technical documentation.
+- **Odoo (Client)**: Lightweight data sender - stores only credentials and executes sync operations
+- **NetSuite (Server)**: Business logic controller - manages retry policies, schedules, and configuration
+- **Mock Server**: Development/testing environment simulating NetSuite RESTlet APIs
+
+See [ARCHITECTURE.md](ARCHITECTURE.md) for detailed architecture diagrams and component details.
 
 ## Quick Start
 
-### 1. Start the System
+### 1. Start the Environment
 
 ```bash
 git clone https://github.com/MustafaPatharia/odoo-pos-netsuite-integration.git
@@ -33,98 +36,179 @@ cd odoo-pos-netsuite-integration
 docker-compose up -d
 ```
 
-Services:
-- **Odoo**: http://localhost:8069 (admin / admin)
-- **Mock NetSuite**: http://localhost:3000
-- **PostgreSQL**: localhost:5432
+**Services:**
+- **Odoo Web UI**: http://localhost:8069 (admin / admin)
+- **Mock NetSuite API**: http://localhost:3000
+- **PostgreSQL Database**: localhost:5432
 
-### 2. Install Module
+### 2. Install the Module
 
-1. Log into Odoo → Apps
-2. Search "NetSuite POS Integration"
+1. Log into Odoo → **Apps**
+2. Search for **"NetSuite POS Integration"**
 3. Click **Install**
+4. Wait for installation to complete
 
-### 3. Configure
+### 3. Configure Integration
 
-1. Go to **NetSuite → Configuration**
-2. Set **API URL**: `http://host.docker.internal:3000` (uses mock server)
-3. Add NetSuite credentials (or use defaults for testing)
-4. Click **Fetch Config from NetSuite** (loads settings from NetSuite)
-5. Click **Test Connection**
+1. Navigate to **NetSuite → Configuration**
+2. Set **API URL**: `http://host.docker.internal:3000` (for mock server)
+3. Enter NetSuite credentials (or use defaults for testing)
+4. Click **"Fetch Config from NetSuite"** - loads all settings from NetSuite
+5. Click **"Test Connection"** - verify connectivity
+
+See [Quick Start Guide](QUICK_START.md) for detailed step-by-step setup instructions.
 
 ## How It Works
 
-### End-of-Day Sync
-1. POS orders accumulate throughout the day
-2. At 23:59 (configurable), cron creates **one consolidated invoice per shop**
-3. Invoice sent to NetSuite with all orders for that shop that day
+### End-of-Day Consolidated Invoicing
+
+1. **Throughout the Day**: POS orders are created and marked as paid in Odoo
+2. **23:59 Daily** (configurable): Automated cron job triggers
+3. **Consolidation**: System groups orders by shop and creates one invoice per shop
+4. **NetSuite Sync**: Consolidated invoice sent to NetSuite with aggregated line items
+5. **Status Update**: Orders marked as synced with NetSuite invoice reference
 
 ### Manual Batch Sync
-1. Go to **Point of Sale → Orders**
-2. Select orders from previous days (not today)
-3. **Action → Sync to NetSuite**
-4. Creates one invoice per (shop, date) combination
 
-### Hourly Item Sync
-- Automatically syncs product/item changes every hour
-- Keeps product catalog in sync
+1. Navigate to **Point of Sale → Orders**
+2. Select multiple orders from **previous dates** (not today)
+3. **Action → Sync Selected to NetSuite**
+4. System creates one invoice per **(shop, date)** combination
+5. View results in **NetSuite → Sync Logs**
 
-## Configuration
+### Hourly Product Sync
 
-All business logic is controlled by NetSuite configuration (fetched via "Fetch Config"):
-- Retry policy (enabled, max retries, delay)
-- Batch size
-- Email notifications
-- Sync schedules
-- Timeout settings
-- Debug logging
+- **Automatic**: Runs every hour via cron job
+- **Purpose**: Syncs product catalog from NetSuite to Odoo
+- **Updates**: Product name, code, price, NetSuite ID mapping
+- **Manual**: Also available via **Products → Action → Sync from NetSuite**
 
-Odoo only stores credentials; NetSuite controls the rules.
+## Configuration Management
 
-## Monitoring
+All business logic is **controlled by NetSuite** (not hardcoded in Odoo):
 
-- **NetSuite → Sync Logs**: View all sync attempts (success/failed)
-- **Point of Sale → Orders**: Check NetSuite sync status column
-- **Mock Server Console**: See incoming requests during testing
+- ✅ Retry policies (enabled, max attempts, delay)
+- ✅ Batch processing size
+- ✅ Email notification settings
+- ✅ Sync schedules and timing
+- ✅ Timeout configurations
+- ✅ Debug logging levels
 
-## Development
+**Odoo's Role**: Store credentials, fetch configuration, execute sync operations
 
-### Mock Server Testing
+**NetSuite's Role**: Define all business rules, retry logic, and integration behavior
+
+## Monitoring & Troubleshooting
+
+### Sync Logs
+**NetSuite → Sync Logs**: View all sync attempts with timestamps, status, and error details
+
+### Order Status
+**Point of Sale → Orders**: Check **NetSuite Sync Status** column for each order
+
+### Queue Status
+**NetSuite → Sync Queue**: Monitor background jobs and retry attempts
+
+### Mock Server Logs
+View console output when using mock server for development/testing
+
+## Development & Testing
+
+### Mock Server Setup
 
 ```bash
 cd mock-netsuite-server
 npm install
 npm start
+```
 
-# Test endpoints
+**Test Health Check:**
+```bash
 curl http://localhost:3000/health
 curl http://localhost:3000/admin/orders
 ```
 
+**Mock API Endpoints:**
+- `GET /health` - Health check
+- `POST /app/site/hosting/restlet.nl?action=getConfig` - Get configuration
+- `POST /app/site/hosting/restlet.nl?action=createInvoice` - Create consolidated invoice
+- `POST /app/site/hosting/restlet.nl?action=syncItems` - Sync products
+- `GET /admin/orders` - View stored orders (admin UI)
+
 ### Module Development
 
 ```bash
-# Upgrade module after changes
+# Upgrade module after code changes
 docker exec odoo_app odoo --stop-after-init -u netsuite_pos_integration -d odoo_netsuite --no-http
 
-# View logs
+# Restart Odoo service
+docker-compose restart odoo_app
+
+# View live logs
 docker logs -f odoo_app
 ```
 
-## Files
+### Creating Test Data
 
-| File | Purpose |
-|------|---------|
-| `README.md` | Quick start guide (this file) |
-| `ARCHITECTURE.md` | Detailed technical architecture |
-| `SETUP_GUIDE.md` | Comprehensive setup instructions |
-| `addons/netsuite_pos_integration/` | Odoo module code |
-| `mock-netsuite-server/` | Mock NetSuite RESTlet server |
+```bash
+# Create test POS orders
+python3 create_test_orders.py
+```
+
+## Documentation Structure
+
+| Document | Purpose |
+|----------|---------|
+| [README.md](README.md) | Overview and quick start (this file) |
+| [QUICK_START.md](QUICK_START.md) | Step-by-step setup and testing guide |
+| [ARCHITECTURE.md](ARCHITECTURE.md) | System architecture and design patterns |
+| [TECHNICAL_DOCUMENTATION.md](TECHNICAL_DOCUMENTATION.md) | Detailed technical specifications |
+| [Implementation/](Implementation/) | Implementation guides for specific features |
+
+## Module Files
+
+| Path | Description |
+|------|-------------|
+| `addons/netsuite_pos_integration/` | Main Odoo module |
+| `addons/netsuite_pos_integration/models/` | Data models and business logic |
+| `addons/netsuite_pos_integration/views/` | UI views and menus |
+| `addons/netsuite_pos_integration/security/` | Access control rules |
+| `addons/netsuite_pos_integration/data/` | Cron jobs and initial data |
+| `mock-netsuite-server/` | Mock NetSuite server for testing |
+| `diagrams/` | System architecture diagrams (Mermaid) |
+
+## Troubleshooting
+
+### Connection Issues
+- Verify mock server is running on port 3000
+- Check API URL uses `host.docker.internal` (not `localhost`)
+- Test connection with curl from within Docker container
+
+### Sync Failures
+- Check **NetSuite → Sync Logs** for error details
+- Verify shop/subsidiary mapping exists
+- Ensure orders are from previous dates (not today for manual sync)
+- Review configuration settings fetched from NetSuite
+
+### Product Sync Issues
+- Verify NetSuite returns valid product data
+- Check **Products → NetSuite Sync Status** field
+- View sync logs for error details
+- Manually trigger sync via **Action → Sync from NetSuite**
+
+## Contributing
+
+1. Fork the repository
+2. Create a feature branch
+3. Make your changes
+4. Test with mock server
+5. Submit a pull request
 
 ## Support
 
 - **GitHub Issues**: https://github.com/MustafaPatharia/odoo-pos-netsuite-integration/issues
-- **Documentation**: See [ARCHITECTURE.md](ARCHITECTURE.md) and [SETUP_GUIDE.md](SETUP_GUIDE.md)
+- **Documentation**: See all docs in `docs/` folder
+- **Architecture Diagrams**: See `diagrams/` folder
 
 ## License
 

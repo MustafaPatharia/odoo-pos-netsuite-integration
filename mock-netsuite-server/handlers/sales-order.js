@@ -10,11 +10,25 @@ function handleCreateSalesOrder(req, res, payload) {
     const orderData = payload;
 
     // Validate required fields
-    if (!orderData.entity || !orderData.items || !Array.isArray(orderData.items)) {
+    if (!orderData.entity || !orderData.item) {
       logSync('CREATE_SALES_ORDER', 'failed', orderData, 'Missing required fields');
       return res.status(400).json({
         success: false,
-        error: 'Missing required fields: entity and items are required'
+        error: 'Missing required fields: entity and item are required'
+      });
+    }
+
+    // Extract entity ID (handle both formats: "1" or {"id": "1"})
+    const entityId = typeof orderData.entity === 'object' ? orderData.entity.id : orderData.entity;
+
+    // Extract items (handle both formats: items[] or item.items[])
+    const items = orderData.item?.items || orderData.items || [];
+
+    if (!Array.isArray(items) || items.length === 0) {
+      logSync('CREATE_SALES_ORDER', 'failed', orderData, 'No items provided');
+      return res.status(400).json({
+        success: false,
+        error: 'At least one item is required'
       });
     }
 
@@ -23,46 +37,38 @@ function handleCreateSalesOrder(req, res, payload) {
     const tranId = `SO-${Date.now().toString().slice(-6)}`;
     const tranDate = orderData.tranDate || new Date().toISOString().split('T')[0];
 
-    // Calculate totals
-    const subTotal = orderData.items.reduce((sum, item) =>
-      sum + ((item.quantity || 1) * (item.rate || 0)), 0);
-
-    // Create sales order record
+    // Create sales order record - STORE AS-IS (preserve Odoo's structure)
     const salesOrder = {
+      ...orderData,  // Keep all original fields from Odoo
       id: internalId,
       internalId: internalId,
       tranId: tranId,
-      recordType: orderData.recordType || 'salesorder',
-      entity: orderData.entity,
-      tranDate: tranDate,
-      subsidiary: orderData.subsidiary,
-      department: orderData.department,
-      location: orderData.location,
-      currency: orderData.currency || 'AED',
       status: orderData.status || 'Pending Fulfillment',
-      items: orderData.items.map((item, index) => ({
-        line: index + 1,
-        item: item.item,
-        quantity: item.quantity || 1,
-        rate: item.rate || 0,
-        amount: (item.quantity || 1) * (item.rate || 0),
-        description: item.description || ''
-      })),
-      subTotal: subTotal,
-      total: orderData.total || subTotal,
-      memo: orderData.memo || '',
-      custbody_pos_shop: orderData.custbody_pos_shop,
-      custbody_pos_date: orderData.custbody_pos_date,
-      custbody_pos_order_count: orderData.custbody_pos_order_count,
       externalId: orderData.externalId || `ODOO-SO-${internalId}`,
       createdDate: new Date().toISOString(),
-      lastModifiedDate: new Date().toISOString(),
-      originalRequest: orderData
+      lastModifiedDate: new Date().toISOString()
+    };
+
+    // Add debug info - what Odoo sent and what NetSuite responded
+    const responsePayload = {
+      success: true,
+      id: internalId,
+      internalId: internalId,
+      tranId: tranId,
+      externalId: salesOrder.externalId,
+      type: 'salesorder',
+      status: salesOrder.status,
+      message: 'Sales Order created successfully'
+    };
+
+    salesOrder.debug = {
+      request: orderData,      // What Odoo sent
+      response: responsePayload  // What NetSuite returned
     };
 
     // Store in mock database
     mockDatabase.salesOrders.set(internalId, salesOrder);
-    
+
     // Save to JSON file (if available from app.locals)
     if (req.app && req.app.locals && req.app.locals.saveToFile) {
       req.app.locals.saveToFile('order', tranDate, salesOrder);
@@ -72,16 +78,7 @@ function handleCreateSalesOrder(req, res, payload) {
     logSync('CREATE_SALES_ORDER', 'success', salesOrder);
 
     // Return NetSuite-like response
-    res.status(201).json({
-      success: true,
-      id: internalId,
-      internalId: internalId,
-      tranId: tranId,
-      externalId: salesOrder.externalId,
-      type: 'salesorder',
-      status: salesOrder.status,
-      message: 'Sales Order created successfully'
-    });
+    res.status(201).json(responsePayload);
 
   } catch (error) {
     logSync('CREATE_SALES_ORDER', 'error', payload, error.message);

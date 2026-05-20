@@ -11,11 +11,25 @@ function handleCreateEODInvoice(req, res, payload) {
     console.log('Payload:', JSON.stringify(payload, null, 2));
 
     // Validate required fields
-    if (!payload.entity || !payload.items || !Array.isArray(payload.items)) {
+    if (!payload.entity || !payload.item) {
       logSync('CREATE_INVOICE', 'failed', payload, 'Missing required fields');
       return res.status(400).json({
         success: false,
-        error: 'Missing required fields: entity and items are required'
+        error: 'Missing required fields: entity and item are required'
+      });
+    }
+
+    // Extract entity ID (handle both formats: "1" or {"id": "1"})
+    const entityId = typeof payload.entity === 'object' ? payload.entity.id : payload.entity;
+
+    // Extract items (handle both formats: items[] or item.items[])
+    const items = payload.item?.items || payload.items || [];
+
+    if (!Array.isArray(items) || items.length === 0) {
+      logSync('CREATE_INVOICE', 'failed', payload, 'No items provided');
+      return res.status(400).json({
+        success: false,
+        error: 'At least one item is required'
       });
     }
 
@@ -24,38 +38,32 @@ function handleCreateEODInvoice(req, res, payload) {
     const tranId = `INV-${Date.now().toString().slice(-6)}`;
     const tranDate = payload.tranDate || new Date().toISOString().split('T')[0];
 
-    // Create invoice record
+    // Create invoice record - STORE AS-IS (preserve Odoo's structure)
     const invoice = {
+      ...payload,  // Keep all original fields from Odoo
       id: internalId,
       tranId: tranId,
-      recordType: payload.recordType || 'invoice',
-      entity: payload.entity,
-      tranDate: tranDate,
-      subsidiary: payload.subsidiary,
-      department: payload.department,
-      location: payload.location,
-      currency: payload.currency || 'AED',
       status: payload.status || 'Open',
-      items: payload.items.map((item, index) => ({
-        line: index + 1,
-        item: item.item,
-        quantity: item.quantity || 1,
-        rate: item.rate || 0,
-        amount: item.amount || ((item.quantity || 1) * (item.rate || 0))
-      })),
-      payments: payload.payments || [],
-      subTotal: payload.items.reduce((sum, item) =>
-        sum + (item.amount || ((item.quantity || 1) * (item.rate || 0))), 0),
-      total: payload.items.reduce((sum, item) =>
-        sum + (item.amount || ((item.quantity || 1) * (item.rate || 0))), 0),
-      memo: payload.memo || '',
-      custbody_pos_shop: payload.custbody_pos_shop,
-      custbody_pos_date: payload.custbody_pos_date,
-      custbody_pos_order_count: payload.custbody_pos_order_count,
       externalId: payload.externalId || `ODOO-INV-${internalId}`,
       createdDate: new Date().toISOString(),
-      lastModifiedDate: new Date().toISOString(),
-      originalRequest: payload
+      lastModifiedDate: new Date().toISOString()
+    };
+
+    // Add debug info - what Odoo sent and what NetSuite responded
+    const responsePayload = {
+      success: true,
+      id: internalId,
+      internalId: internalId,
+      tranId: tranId,
+      externalId: invoice.externalId,
+      type: 'invoice',
+      status: invoice.status,
+      message: 'End-of-Day invoice created successfully'
+    };
+
+    invoice.debug = {
+      request: payload,      // What Odoo sent
+      response: responsePayload  // What NetSuite returned
     };
 
     // Store in database
@@ -76,16 +84,7 @@ function handleCreateEODInvoice(req, res, payload) {
     console.log('Internal ID:', internalId);
 
     // Return success response
-    res.json({
-      success: true,
-      id: internalId,
-      internalId: internalId,
-      tranId: tranId,
-      externalId: invoice.externalId,
-      type: 'invoice',
-      status: invoice.status,
-      message: 'End-of-Day invoice created successfully'
-    });
+    res.json(responsePayload);
 
   } catch (error) {
     logSync('CREATE_EOD_INVOICE', 'error', payload, error.message);

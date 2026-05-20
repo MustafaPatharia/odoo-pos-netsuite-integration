@@ -73,8 +73,6 @@
                                 </group>
 
                                 <group string="Batch Processing">
-                                    <field name="config_order_batch_size" readonly="1"/>
-                                    <field name="config_invoice_batch_size" readonly="1"/>
                                     <field name="config_product_batch_size" readonly="1"/>
                                 </group>
 
@@ -100,8 +98,6 @@
                                 <group string="Consolidation Rules">
                                     <field name="config_consolidate_orders" readonly="1"/>
                                     <field name="config_consolidate_invoices" readonly="1"/>
-                                    <field name="config_aggregate_line_items" readonly="1"/>
-                                    <field name="config_group_by_product" readonly="1"/>
                                 </group>
                             </group>
 

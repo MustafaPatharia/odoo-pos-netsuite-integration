@@ -1,17 +1,10 @@
 # Technical Documentation
 ## Odoo POS ↔ Oracle NetSuite Integration
 
----
-
-**Project Name**: Odoo Point of Sale to NetSuite ERP Integration
-**Date**: May 13, 2026
+**Last Updated**: May 20, 2026
+**Module Version**: 17.0.1.0.0
+**Odoo Version**: 17.0
 **Classification**: Technical Design Specification
-
----
-
-## Document Purpose
-
-This technical documentation provides comprehensive implementation details for the Odoo POS to NetSuite ERP integration solution. It serves as the authoritative reference for developers, system administrators, and technical stakeholders involved in deployment, maintenance, and enhancement of the integration system.
 
 ---
 
@@ -19,16 +12,13 @@ This technical documentation provides comprehensive implementation details for t
 
 1. [Executive Summary](#1-executive-summary)
 2. [System Architecture](#2-system-architecture)
-3. [Odoo Implementation Details](#3-odoo-implementation-details)
-4. [NetSuite Implementation Details](#4-netsuite-implementation-details)
-5. [API Specifications](#5-api-specifications)
-6. [Data Flow and Process Logic](#6-data-flow-and-process-logic)
-7. [Configuration Management](#7-configuration-management)
-8. [Security and Authentication](#8-security-and-authentication)
-9. [Error Handling and Logging](#9-error-handling-and-logging)
-10. [Deployment Guide](#10-deployment-guide)
-11. [Testing Strategy](#11-testing-strategy)
-12. [Appendices](#12-appendices)
+3. [Odoo Implementation](#3-odoo-implementation)
+4. [NetSuite API Endpoints](#4-netsuite-api-endpoints)
+5. [Data Flows](#5-data-flows)
+6. [Configuration Management](#6-configuration-management)
+7. [Security & Authentication](#7-security--authentication)
+8. [Error Handling & Logging](#8-error-handling--logging)
+9. [Deployment Guide](#9-deployment-guide)
 
 ---
 
@@ -36,921 +26,1029 @@ This technical documentation provides comprehensive implementation details for t
 
 ### 1.1 Project Overview
 
-The Odoo POS ↔ NetSuite Integration project will establish a bidirectional, configurable enterprise integration solution between Odoo Point of Sale (POS) system and Oracle NetSuite ERP platform. This integration will enable automated synchronization of transactional and master data while supporting multiple execution modes to accommodate diverse business requirements.
+The **Odoo POS ↔ NetSuite Integration** establishes a production-ready synchronization solution between Odoo Point of Sale and Oracle NetSuite ERP. The integration implements a **client-server architecture** where Odoo acts as a lightweight client and NetSuite controls all business logic.
 
 ### 1.2 Business Objectives
 
-- **Operational Efficiency**: Eliminate manual data entry and reduce operational overhead
-- **Data Consistency**: Maintain synchronized master data across both systems
-- **Financial Accuracy**: Ensure accurate and timely financial reporting through consolidated invoicing
-- **Scalability**: Support multi-location, multi-subsidiary business operations
-- **Flexibility**: Enable dynamic configuration changes without code deployment
+- **Eliminate Manual Data Entry**: Automatic synchronization of POS orders to NetSuite
+- **Consolidated Financial Reporting**: One invoice per shop per day in NetSuite
+- **Data Consistency**: Synchronized product catalog across both systems
+- **Operational Efficiency**: Reduced API calls, faster processing
+- **Flexibility**: NetSuite-controlled configuration for rapid changes
 
 ### 1.3 Key Features
- **Dynamic Configuration Management**
-- NetSuite-controlled business logic via REST API
-- Real-time configuration updates to Odoo
-- No hardcoded business rules
 
- **Consolidated Transaction Processing**
-- One consolidated invoice per shop per day
-- Aggregated line items with intelligent quantity summation
-- Automatic end-of-day processing
+✅ **Consolidated End-of-Day Invoicing**
+- One invoice per shop per day in NetSuite
+- Aggregated line items (sum quantities by product)
+- Automatic daily sync at configurable time (default 23:59)
 
- **Flexible Execution Modes**
-- Real-time sync on transaction confirmation
-- Scheduled batch processing (midnight sync)
-- Manual on-demand synchronization
+✅ **Hourly Product Synchronization**
+- NetSuite → Odoo product catalog sync
+- Automatic updates every hour
+- Manual sync option available
 
- **Master Data Synchronization**
-- Hourly product/item catalog updates
-- Payment method mappings
-- Multi-subsidiary support (NetSuite OneWorld)
+✅ **NetSuite-Controlled Configuration**
+- All business logic defined in NetSuite
+- Dynamic configuration fetch via API
+- No code deployment needed for config changes
 
- **Enterprise-Grade Reliability**
-- Exponential backoff retry mechanism
-- Comprehensive audit logging
-- Manual retry capabilities for failed transactions
-- Queue-based background processing
+✅ **Queue-Based Processing**
+- Background job processing
+- Automatic retry logic
+- Non-blocking user interface
+
+✅ **Comprehensive Audit Trail**
+- Detailed sync logs
+- Request/response payload logging (configurable)
+- Performance metrics tracking
 
 ### 1.4 Integration Scope
 
-#### Master Data (NetSuite → Odoo)
-- Products/Items (Inventory Items)
-- Payment Methods
-- Shop/Subsidiary Mappings
-- Location and Department Hierarchies
+#### Master Data Synchronization
 
-#### Transactional Data (Odoo → NetSuite)
-- Consolidated Sales Orders (one per shop per day)
-- Consolidated Invoices (one per shop per day)
-- Aggregated Payment Transactions
+| Data Type | Direction | Frequency | Method |
+|-----------|-----------|-----------|--------|
+| **Products/Items** | NetSuite → Odoo | Hourly (automatic) | REST API |
+| **Payment Methods** | NetSuite → Odoo | On-demand (manual) | REST API |
+| **Shop/Subsidiary Mappings** | Manual Setup | One-time | Odoo UI |
 
-### 1.5 Technical Architecture Summary
+#### Transactional Data Synchronization
 
-The solution will implement a **Client-Server Architecture Pattern** where:
+| Data Type | Direction | Frequency | Method |
+|-----------|-----------|-----------|--------|
+| **Consolidated Invoices** | Odoo → NetSuite | Daily EOD (automatic) | REST API |
+| **POS Orders** | Odoo → NetSuite | Manual batch sync | REST API |
 
-- **Odoo (Client)**: "Dumb client" that will store only NetSuite credentials and execute synchronization tasks
-- **NetSuite (Server)**: "Intelligent server" that will control all business logic, retry policies, and configuration
-- **Communication**: RESTful API with OAuth 1.0 authentication
+### 1.5 Technical Stack
 
-This design will ensure:
-- Centralized business rule management
-- Simplified Odoo module maintenance
-- Dynamic reconfiguration without code changes
-- Clear separation of concerns
+**Odoo Platform:**
+- Odoo 17.0 Community/Enterprise
+- Python 3.10+
+- PostgreSQL 14+
+- Python `requests` library for HTTP communication
+
+**NetSuite Platform:**
+- Oracle NetSuite (SuiteScript 2.0)
+- RESTlet endpoints
+- OAuth 1.0 authentication
+- SuiteQL for data queries
 
 ---
 
 ## 2. System Architecture
 
-### 2.1 High-Level Architecture
+### 2.1 Architectural Pattern
 
-**Proposed System Architecture:**
+**Client-Server Architecture with Configuration-as-Data**
 
-![System Architecture Diagram](../diagrams/system_architecture.png){width=40%}
+```
+┌─────────────────────────────────────────────────────────────┐
+│                      ODOO (Client)                          │
+│  ┌────────────┐  ┌────────────┐  ┌────────────┐            │
+│  │ POS Orders │→│ Sync Queue │→│ API Client │─────┐       │
+│  └────────────┘  └────────────┘  └────────────┘      │       │
+│                                                        │       │
+│  ┌────────────┐  ┌────────────┐  ┌────────────┐      │       │
+│  │  Products  │←│ Product    │←│  Config    │      │       │
+│  └────────────┘  │  Sync      │  │  Model     │      │       │
+│                  └────────────┘  └────────────┘      │       │
+└───────────────────────────────────────────────────────┼───────┘
+                                                         │
+                                                  HTTPS/REST
+                                                         │
+┌────────────────────────────────────────────────────────┼───────┐
+│                   NETSUITE (Server)                    │       │
+│  ┌────────────┐  ┌────────────┐  ┌────────────┐      │       │
+│  │  RESTlet   │←─┤  Business  │  │   Config   │      │       │
+│  │ Endpoints  │  │   Logic    │  │   Record   │      │       │
+│  └────────────┘  └────────────┘  └────────────┘      │       │
+│       ↓                ↓                                │       │
+│  ┌────────────────────────────────────────────┐       │       │
+│  │      NetSuite Records (Invoices, etc.)     │       │       │
+│  └────────────────────────────────────────────┘       │       │
+└────────────────────────────────────────────────────────────────┘
+```
 
-### 2.2 Component Architecture
+### 2.2 Component Diagram
 
-#### 2.2.1 Odoo Components
+**Odoo Components:**
 
-| Component | Type | Responsibility |
-|-----------|------|----------------|
-| `netsuite.config` | Model | Credential storage and configuration management |
-| `pos.order` (extended) | Model | POS order sync status and NetSuite reference tracking |
-| `netsuite.api.client` | Service | HTTP communication with NetSuite REST APIs |
-| `netsuite.consolidated.sync` | Service | Consolidated order/invoice aggregation logic |
-| `netsuite.sync.log` | Model | Audit trail and sync attempt logging |
-| `netsuite.sync.queue` | Model | Background job queue management |
-| `netsuite.subsidiary.mapping` | Model | Shop to NetSuite subsidiary mapping |
-| `netsuite.payment.method.mapping` | Model | Payment method mapping |
-| Cron Jobs | Scheduler | Automated hourly and end-of-day sync |
+```
+netsuite_pos_integration/
+│
+├── models/
+│   ├── netsuite_config.py              # Configuration model (credentials + fetched config)
+│   ├── netsuite_api_client.py          # HTTP client for NetSuite API
+│   ├── netsuite_consolidated_sync.py   # Order/invoice consolidation service
+│   ├── netsuite_product_sync.py        # Product synchronization service
+│   ├── netsuite_sync_queue.py          # Background job queue
+│   ├── netsuite_sync_log.py            # Audit logging
+│   ├── netsuite_mappings.py            # Shop/subsidiary mappings
+│   ├── pos_order.py                    # Extended POS order model
+│   └── account_move.py                 # Extended invoice model
+│
+├── views/
+│   ├── netsuite_config_views.xml       # Configuration UI
+│   ├── netsuite_sync_log_views.xml     # Sync logs UI
+│   ├── netsuite_sync_queue_views.xml   # Queue management UI
+│   ├── pos_order_views.xml             # Extended POS order views
+│   └── product_views.xml               # Product views with NetSuite fields
+│
+├── data/
+│   └── netsuite_cron_data.xml          # Scheduled jobs (hourly, EOD)
+│
+└── security/
+    ├── netsuite_security.xml           # Security groups
+    └── ir.model.access.csv             # Access control rules
+```
 
-#### 2.2.2 NetSuite Components
+### 2.3 Technology Stack Details
 
-
-
-
-
-
-### 2.3 Technology Stack
-
-#### Odoo Platform
-- **Platform**: Odoo 17.0 Community/Enterprise
-- **Language**: Python 3.10+
-- **Framework**: Odoo ORM
-- **Database**: PostgreSQL 14+
-- **API**: Odoo XML-RPC / JSON-RPC
-- **HTTP Library**: Python `requests` library
-
-#### NetSuite Platform
-
-
-
-
-
-#### Infrastructure
-- **Containerization**: Docker & Docker Compose
-- **Version Control**: Git / GitHub
+| Component | Technology | Version | Purpose |
+|-----------|-----------|---------|---------|
+| **Odoo Core** | Python | 3.10+ | Application framework |
+| **Database** | PostgreSQL | 14+ | Data persistence |
+| **HTTP Client** | Python `requests` | 2.28+ | API communication |
+| **NetSuite** | SuiteScript 2.0 | - | Server-side business logic |
+| **Authentication** | OAuth 1.0 | - | NetSuite API auth |
 
 ---
 
-## 3. Odoo Implementation Details
+## 3. Odoo Implementation
 
-<!-- ### 3.1 Module Structure -->
-<!--
-```
-addons/netsuite_pos_integration/
-├── __init__.py
-├── __manifest__.py
-├── README.md
-│
-├── controllers/
-│   ├── __init__.py
-│   └── netsuite_config_controller.py      # API endpoints for config updates
-│
-├── data/
-│   ├── netsuite_cron_data.xml             # Scheduled jobs
-│   └── netsuite_sync_status_data.xml      # Initial data
-│
-├── models/
-│   ├── __init__.py
-│   ├── netsuite_config.py                 # Configuration model
-│   ├── netsuite_api_client.py             # API client service
-│   ├── netsuite_consolidated_sync.py      # Consolidation service
-│   ├── netsuite_mappings.py               # Mapping models
-│   ├── netsuite_product_sync.py           # Product sync service
-│   ├── netsuite_sync_log.py               # Logging model
-│   ├── netsuite_sync_queue.py             # Queue model
-│   ├── pos_order.py                       # POS order extension
-│   └── res_partner.py                     # Customer extension (future)
-│
-├── security/
-│   ├── ir.model.access.csv                # Access control
-│   └── netsuite_security.xml              # Security groups
-│
-├── views/
-│   ├── netsuite_config_views.xml          # Configuration UI
-│   ├── netsuite_mapping_views.xml         # Mapping UI
-│   ├── netsuite_menu.xml                  # Menu structure
-│   ├── netsuite_sync_log_views.xml        # Logs UI
-│   ├── netsuite_sync_queue_views.xml      # Queue UI
-│   ├── pos_order_views.xml                # Extended POS views
-│   └── product_views.xml                  # Product views
-│
-└── wizards/
-    ├── __init__.py
-    └── netsuite_manual_sync_wizard.py     # Manual sync wizard
-``` -->
+### 3.1 Module Structure
 
-### 3.2 Core Models
-
-#### 3.2.1 NetSuite Configuration Model
-
-**Model Name**: `netsuite.config`
-**Purpose**: Will provide central configuration management and credential storage
-
-**Key Fields**:
-
-| Field Name | Type | Required | Description |
-|------------|------|----------|-------------|
-| `name` | Char | Yes | Configuration name |
-| `active` | Boolean | Yes | Enable/disable configuration |
-| `api_url` | Char | Yes | NetSuite base API URL |
-| `account_id` | Char | Yes | NetSuite account identifier |
-| `consumer_key` | Char | No | OAuth consumer key |
-| `consumer_secret` | Char | No | OAuth consumer secret |
-| `token_id` | Char | No | OAuth token ID |
-| `token_secret` | Char | No | OAuth token secret |
-| `netsuite_config` | Text | No | Configuration JSON from NetSuite (read-only) |
-| `last_config_fetch` | Datetime | No | Last configuration fetch timestamp |
-
-**Computed Fields** (from NetSuite configuration JSON):
-
-| Field | Source Path | Description |
-|-------|-------------|-------------|
-| `config_integration_mode` | `configuration.integration_mode` | Current sync mode |
-| `config_retry_enabled` | `configuration.retry_policy.enabled` | Retry enabled flag |
-| `config_max_retries` | `configuration.retry_policy.max_retries` | Maximum retry attempts |
-| `config_consolidate_orders` | `configuration.consolidation_rules.consolidate_orders_per_shop_per_day` | Consolidation flag |
-| `config_end_of_day_sync_time` | `configuration.scheduled_settings.order_sync_time` | EOD sync time |
-
-**Key Methods**:
-
-**Proposed Implementation:**
+**Module Manifest** (`__manifest__.py`):
 
 ```python
-@api.model
-def get_active_config():
-    """Retrieve the active configuration"""
+{
+    'name': 'NetSuite POS Integration',
+    'version': '17.0.1.0.0',
+    'category': 'Point of Sale',
+    'depends': ['base', 'point_of_sale', 'sale', 'account'],
+    'data': [
+        'security/netsuite_security.xml',
+        'security/ir.model.access.csv',
+        'data/netsuite_cron_data.xml',
+        'views/netsuite_config_views.xml',
+        'views/netsuite_sync_log_views.xml',
+        'views/netsuite_sync_queue_views.xml',
+        'views/pos_order_views.xml',
+        'views/product_views.xml',
+        'views/netsuite_menu.xml',
+    ],
+    'external_dependencies': {
+        'python': ['requests'],
+    },
+    'installable': True,
+    'application': True,
+}
+```
+
+### 3.2 Configuration Model
+
+**File:** `models/netsuite_config.py`
+
+**Purpose:** Store NetSuite credentials and display fetched configuration
+
+**Key Fields:**
+
+```python
+class NetSuiteConfig(models.Model):
+    _name = 'netsuite.config'
+    _description = 'NetSuite Configuration'
+
+    # === CREDENTIALS (Stored Locally) ===
+    name = fields.Char(default='NetSuite Integration')
+    active = fields.Boolean(default=True)
+    api_url = fields.Char(help='NetSuite base URL')
+    account_id = fields.Char()
+    consumer_key = fields.Char()
+    consumer_secret = fields.Char()
+    token_id = fields.Char()
+    token_secret = fields.Char()
+
+    # === FETCHED FROM NETSUITE (Read-Only) ===
+    netsuite_config = fields.Text(
+        string='NetSuite Configuration JSON',
+        readonly=True,
+        help='Raw configuration fetched from NetSuite'
+    )
+    last_config_fetch = fields.Datetime(readonly=True)
+
+    # === COMPUTED FIELDS (From netsuite_config JSON) ===
+    config_integration_mode = fields.Selection([
+        ('realtime', 'Real-Time'),
+        ('scheduled', 'Scheduled'),
+        ('manual', 'Manual Only')
+    ], compute='_compute_config_fields', store=False)
+
+    config_hourly_sync_enabled = fields.Boolean(
+        compute='_compute_config_fields', store=False
+    )
+    config_end_of_day_sync_time = fields.Char(
+        compute='_compute_config_fields', store=False
+    )
+    config_max_retries = fields.Integer(
+        compute='_compute_config_fields', store=False
+    )
+    # ... 40+ more computed fields ...
+```
+
+**Key Methods:**
+
+```python
+def fetch_netsuite_config(self):
+    """Fetch configuration from NetSuite API"""
+    api_client = self.env['netsuite.api.client']
+    config_data = api_client.make_request(
+        action='getConfig',
+        payload={}
+    )
+
+    self.write({
+        'netsuite_config': json.dumps(config_data),
+        'last_config_fetch': fields.Datetime.now()
+    })
+
+    return {
+        'type': 'ir.actions.client',
+        'tag': 'display_notification',
+        'params': {
+            'message': 'Successfully fetched configuration from NetSuite',
+            'type': 'success',
+        }
+    }
 
 def test_connection(self):
     """Test NetSuite API connectivity"""
+    try:
+        api_client = self.env['netsuite.api.client']
+        response = api_client.make_request(
+            action='testConnection',
+            payload={}
+        )
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'message': 'Connection successful! NetSuite is reachable.',
+                'type': 'success',
+            }
+        }
+    except Exception as e:
+        raise UserError(f'Connection failed: {str(e)}')
 
-def action_sync_products(self):
-    """Manually trigger product sync"""
+@api.model
+def get_active_config(self):
+    """Retrieve active configuration (singleton pattern)"""
+    config = self.search([('active', '=', True)], limit=1)
+    if not config:
+        raise UserError('No active NetSuite configuration found')
+    return config
 ```
 
-#### 3.2.2 POS Order Extension
+### 3.3 API Client
 
-**Model Name**: `pos.order` (inherited)
-**Purpose**: Will track NetSuite sync status for POS orders
+**File:** `models/netsuite_api_client.py`
 
-**Additional Fields**:
+**Purpose:** HTTP communication layer with NetSuite
 
-| Field Name | Type | Description |
-|------------|------|-------------|
-| `netsuite_sync_status` | Selection | Sync status (not_synced, queued, synced, failed) |
-| `netsuite_id` | Char | NetSuite internal ID |
-| `netsuite_tran_id` | Char | NetSuite transaction number |
-| `netsuite_sync_date` | Datetime | Last successful sync timestamp |
-| `netsuite_error` | Text | Error message from last failed sync |
-| `netsuite_sync_count` | Integer | Number of sync attempts |
-| `x_netsuite_invoice_id` | Char | Consolidated invoice NetSuite ID |
-| `x_netsuite_invoice_sync_date` | Datetime | Invoice sync timestamp |
-
-**Key Methods**:
-
-**Proposed Implementation:**
+**Key Methods:**
 
 ```python
-def action_sync_to_netsuite(self):
-    """
-    Manual batch sync to NetSuite
-    Creates ONE consolidated invoice per shop per day
-    """
+class NetSuiteApiClient(models.AbstractModel):
+    _name = 'netsuite.api.client'
+    _description = 'NetSuite API Client'
 
-def _prepare_netsuite_order_data(self):
-    """Prepare order data for NetSuite API"""
+    @api.model
+    def make_request(self, action, payload, config=None):
+        """
+        Generic API request method
 
-def _mark_as_synced(self, netsuite_id, netsuite_tran_id):
-    """Update sync status after successful sync"""
+        Args:
+            action (str): API action (getConfig, createInvoice, etc.)
+            payload (dict): Request payload
+            config (record): NetSuite config record (optional)
 
-def _mark_as_failed(self, error_message):
-    """Update sync status after failed sync"""
+        Returns:
+            dict: API response data
+        """
+        if not config:
+            config = self.env['netsuite.config'].get_active_config()
+
+        url = f"{config.api_url}/app/site/hosting/restlet.nl?action={action}"
+
+        headers = self._build_headers(config)
+
+        try:
+            response = requests.post(
+                url,
+                json=payload,
+                headers=headers,
+                timeout=config.config_timeout_seconds or 30
+            )
+            response.raise_for_status()
+
+            return response.json()
+
+        except requests.exceptions.Timeout:
+            raise UserError('NetSuite request timed out')
+        except requests.exceptions.ConnectionError:
+            raise UserError('Cannot connect to NetSuite')
+        except requests.exceptions.HTTPError as e:
+            raise UserError(f'NetSuite returned error: {e.response.text}')
+
+    def _build_headers(self, config):
+        """Build HTTP headers with OAuth 1.0 authentication"""
+        # For production NetSuite, implement full OAuth 1.0 signature
+        return {
+            'Content-Type': 'application/json',
+            'Authorization': f'OAuth realm="{config.account_id}"'
+            # ... full OAuth 1.0 signature generation ...
+        }
 ```
 
-#### 3.2.3 Consolidated Sync Service
+### 3.4 Consolidated Sync Service
 
-**Model Name**: `netsuite.consolidated.sync`
-**Type**: Abstract Model (Service)
-**Purpose**: Will aggregate and sync consolidated orders/invoices
+**File:** `models/netsuite_consolidated_sync.py`
 
-**Key Methods**:
+**Purpose:** Core business logic for syncing orders/invoices to NetSuite
 
-**Proposed Implementation:**
+**Key Features:**
+- Groups orders by warehouse and date
+- Aggregates line items by product (sums quantities)
+- Creates one consolidated invoice per group
+- Handles both manual and scheduled sync
+
+**Main Method:**
 
 ```python
 @api.model
-def sync_consolidated_orders(self, target_date=None, warehouse_ids=None):
+def sync_consolidated_orders(self, target_date=None, warehouse_ids=None,
+                               sync_all_dates=True, sync_mode='manual'):
     """
-    Sync consolidated orders to NetSuite (one per shop per day)
+    Sync consolidated orders to NetSuite
 
     Args:
-        target_date: Date to sync (default: yesterday)
-        warehouse_ids: List of warehouse IDs (default: all)
+        target_date (date): Specific date to sync
+        warehouse_ids (list): Warehouse IDs to filter
+        sync_all_dates (bool): If True, sync all past unsynced orders
+        sync_mode (str): 'manual' or 'scheduled'
 
     Returns:
-        dict: {success, total_shops, total_orders, synced, failed, errors}
+        dict: Sync results (success_count, error_count, etc.)
     """
+    config = self.env['netsuite.config'].get_active_config()
 
-@api.model
-def sync_consolidated_invoices(self, target_date=None, warehouse_ids=None):
-    """Sync consolidated invoices to NetSuite"""
+    # Step 1: Find eligible orders
+    orders = self._find_eligible_orders(
+        target_date, warehouse_ids, sync_all_dates
+    )
 
-def _group_orders_by_shop(self, pos_orders):
-    """Group orders by warehouse/shop"""
+    if not orders:
+        return {'success': True, 'message': 'No orders to sync'}
 
-def _aggregate_line_items(self, orders):
+    # Step 2: Group by warehouse and date
+    grouped_orders = self._group_orders(orders)
+
+    # Step 3: Process each group
+    results = {
+        'total_groups': len(grouped_orders),
+        'success_count': 0,
+        'error_count': 0,
+        'invoice_refs': []
+    }
+
+    for (warehouse_id, order_date), order_list in grouped_orders.items():
+        try:
+            # Consolidate orders into one invoice
+            payload = self._prepare_consolidated_payload(
+                order_list, warehouse_id, order_date
+            )
+
+            # Send to NetSuite
+            api_client = self.env['netsuite.api.client']
+            response = api_client.make_request(
+                action='createInvoice',
+                payload=payload,
+                config=config
+            )
+
+            # Update orders
+            invoice_ref = response.get('invoiceId')
+            order_list.write({
+                'netsuite_sync_status': 'synced',
+                'netsuite_invoice_ref': invoice_ref,
+                'netsuite_last_sync': fields.Datetime.now()
+            })
+
+            # Log success
+            self._create_sync_log(
+                order_list, payload, response, 'success'
+            )
+
+            results['success_count'] += 1
+            results['invoice_refs'].append(invoice_ref)
+
+        except Exception as e:
+            # Log failure
+            self._create_sync_log(
+                order_list, payload, None, 'failed', error=str(e)
+            )
+            results['error_count'] += 1
+
+    return results
+
+def _prepare_consolidated_payload(self, orders, warehouse_id, order_date):
     """
-    Aggregate order lines by product
-    Sums quantities, calculates weighted average prices
-    """
+    Build consolidated invoice payload
 
-def _prepare_consolidated_payload(self, warehouse, orders, aggregated_lines, target_date):
-    """Prepare consolidated invoice payload for NetSuite API"""
+    Consolidation Logic:
+    - Sum quantities for same product across all orders
+    - Use earliest order time as reference
+    - Include all order references in memo
+    """
+    # Get shop mapping
+    mapping = self.env['netsuite.subsidiary.mapping'].search([
+        ('warehouse_id', '=', warehouse_id)
+    ], limit=1)
+
+    if not mapping:
+        raise UserError(f'No NetSuite mapping found for warehouse ID {warehouse_id}')
+
+    # Aggregate line items
+    aggregated_lines = {}
+    for order in orders:
+        for line in order.lines:
+            product_id = line.product_id.id
+            if product_id not in aggregated_lines:
+                aggregated_lines[product_id] = {
+                    'product': line.product_id,
+                    'quantity': 0,
+                    'price': line.price_unit,
+                    'netsuite_item_id': line.product_id.netsuite_id
+                }
+            aggregated_lines[product_id]['quantity'] += line.qty
+
+    # Build payload
+    payload = {
+        'subsidiary_id': mapping.netsuite_subsidiary_id,
+        'trandate': order_date.strftime('%Y-%m-%d'),
+        'memo': f"Consolidated POS orders: {', '.join(orders.mapped('name'))}",
+        'lines': [
+            {
+                'item_id': data['netsuite_item_id'],
+                'quantity': data['quantity'],
+                'rate': data['price']
+            }
+            for data in aggregated_lines.values()
+        ]
+    }
+
+    return payload
 ```
 
-#### 3.2.4 API Client Service
+### 3.5 Product Sync Service
 
-**Model Name**: `netsuite.api.client`
-**Type**: Abstract Model (Service)
-**Purpose**: Will handle all HTTP communication with NetSuite
+**File:** `models/netsuite_product_sync.py`
 
-**Key Methods**:
-
-**Proposed Implementation:**
+**Purpose:** Sync products from NetSuite to Odoo
 
 ```python
-@api.model
-def _get_headers(self, config):
-    """Generate HTTP headers with OAuth signature"""
+class NetSuiteProductSync(models.AbstractModel):
+    _name = 'netsuite.product.sync'
+    _description = 'NetSuite Product Sync Service'
 
-@api.model
-def _make_request(self, config, endpoint, method='POST', data=None):
-    """
-    Make HTTP request to NetSuite
+    @api.model
+    def sync_products_from_netsuite(self):
+        """Fetch products from NetSuite and create/update in Odoo"""
+        config = self.env['netsuite.config'].get_active_config()
 
-    Returns:
-        tuple: (success, response_data, error_message, status_code, execution_time)
-    """
+        # Fetch products from NetSuite
+        api_client = self.env['netsuite.api.client']
+        response = api_client.make_request(
+            action='syncItems',
+            payload={}
+        )
 
-@api.model
-def fetch_config(self, config):
-    """Fetch configuration from NetSuite"""
+        products_data = response.get('items', [])
 
-@api.model
-def test_connection(self, config):
-    """Test NetSuite connectivity"""
+        results = {
+            'created': 0,
+            'updated': 0,
+            'failed': 0
+        }
 
-@api.model
-def sync_product(self, config, product_data):
-    """Sync individual product to NetSuite"""
+        for item_data in products_data:
+            try:
+                product = self._create_or_update_product(item_data)
+                if product.id:
+                    results['updated' if product.id else 'created'] += 1
+            except Exception as e:
+                _logger.error(f"Failed to sync product {item_data.get('itemid')}: {str(e)}")
+                results['failed'] += 1
 
-@api.model
-def create_consolidated_order(self, config, order_payload):
-    """Create consolidated order in NetSuite"""
+        return results
 
-@api.model
-def create_consolidated_invoice(self, config, invoice_payload):
-    """Create consolidated invoice in NetSuite"""
+    def _create_or_update_product(self, item_data):
+        """Create or update product from NetSuite data"""
+        Product = self.env['product.template']
+
+        # Search by NetSuite ID
+        netsuite_id = item_data.get('internalid')
+        product = Product.search([
+            ('netsuite_id', '=', netsuite_id)
+        ], limit=1)
+
+        vals = {
+            'name': item_data.get('itemid'),
+            'default_code': item_data.get('itemid'),
+            'list_price': float(item_data.get('baseprice', 0)),
+            'netsuite_id': netsuite_id,
+            'netsuite_sync_status': 'synced',
+            'netsuite_last_sync': fields.Datetime.now()
+        }
+
+        if product:
+            product.write(vals)
+        else:
+            product = Product.create(vals)
+
+        return product
 ```
 
-**Request Flow**:
+### 3.6 Extended POS Order Model
 
-**Proposed Process:**
+**File:** `models/pos_order.py`
 
-1. Retrieve active configuration
-2. Generate OAuth headers (if credentials configured)
-3. Construct full URL from base URL + endpoint
-4. Execute HTTP request with timeout settings
-5. Parse JSON response
-6. Log request/response for audit
-7. Return standardized response tuple
-
-#### 3.2.5 Sync Logging Model
-
-**Model Name**: `netsuite.sync.log`
-**Purpose**: Will provide comprehensive audit trail for all sync operations
-
-**Fields**:
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `name` | Char | Log entry identifier |
-| `sync_type` | Selection | Type: order, invoice, product, config |
-| `sync_direction` | Selection | Direction: odoo_to_netsuite, netsuite_to_odoo |
-| `status` | Selection | Status: success, failed, pending |
-| `request_payload` | Text | JSON request payload |
-| `response_payload` | Text | JSON response payload |
-| `error_message` | Text | Error details if failed |
-| `execution_time_ms` | Integer | Request execution time |
-| `http_status_code` | Integer | HTTP response status |
-| `pos_order_ids` | Many2many | Related POS orders |
-| `sync_date` | Datetime | Sync attempt timestamp |
-| `retry_count` | Integer | Number of retries |
-
-### 3.3 Mapping Models
-
-#### 3.3.1 Subsidiary Mapping
-
-**Model Name**: `netsuite.subsidiary.mapping`
-**Purpose**: Will map Odoo shops/warehouses to NetSuite subsidiaries
-
-**Fields**:
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `name` | Char | Mapping name |
-| `odoo_warehouse_id` | Many2one | Odoo warehouse/shop |
-| `netsuite_subsidiary_id` | Char | NetSuite subsidiary internal ID |
-| `netsuite_subsidiary_name` | Char | NetSuite subsidiary name |
-| `netsuite_department_id` | Char | NetSuite department ID (optional) |
-| `netsuite_location_id` | Char | NetSuite location ID (optional) |
-| `active` | Boolean | Enable/disable mapping |
-
-#### 3.3.2 Payment Method Mapping
-
-**Model Name**: `netsuite.payment.method.mapping`
-**Purpose**: Will map Odoo payment methods to NetSuite payment methods
-
-**Fields**:
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `name` | Char | Mapping name |
-| `odoo_payment_method_id` | Many2one | Odoo payment method |
-| `netsuite_payment_method_id` | Char | NetSuite payment method ID |
-| `netsuite_payment_method_name` | Char | NetSuite payment method name |
-| `active` | Boolean | Enable/disable mapping |
-
-### 3.4 Automated Schedulers (Cron Jobs)
-
-#### 3.4.1 Hourly Product Sync
-
-**Cron Name**: `NetSuite: Sync Products Hourly`
-**Schedule**: Every hour at :00
-**Model**: `netsuite.product.sync`
-**Method**: `cron_sync_products_from_netsuite`
-
-**Logic**:
-
-**Proposed Implementation:**
-
-1. Fetch active NetSuite configuration
-2. Call NetSuite REST API: `/services/rest/record/v1/inventoryItem`
-3. Parse response and map fields to Odoo products
-4. Create or update products in Odoo
-5. Log sync results
-
-**Field Mapping (NetSuite → Odoo)**:
-
-| NetSuite Field | Odoo Field | Notes |
-|----------------|------------|-------|
-| `itemid` | `default_code` | Product internal reference |
-| `displayname` | `name` | Product name |
-| `salesdescription` | `description_sale` | Sales description |
-| `cost` | `standard_price` | Product cost |
-| `price` | `list_price` | Sale price |
-| `quantityavailable` | `qty_available` | Stock quantity |
-| `isinactive` | `active` | Active status (inverted) |
-
-#### 3.4.2 End of Day Order Sync
-
-**Cron Name**: `NetSuite: Sync Orders End of Day`
-**Schedule**: Daily at 00:00 (midnight)
-**Model**: `netsuite.consolidated.sync`
-**Method**: `cron_sync_end_of_day_orders`
-
-**Logic**:
-
-**Proposed Implementation:**
-
-1. Calculate target date (previous day)
-2. Fetch all paid POS orders from previous day
-3. Group orders by warehouse/shop
-4. For each shop:
-   - Aggregate all order lines by product
-   - Calculate total quantities and weighted average prices
-   - Generate consolidated invoice payload
-   - Send to NetSuite API
-   - Mark orders as synced
-5. Log all results
-
-**Payload Structure**:
-
-```json
-{
-  "type": "consolidated_invoice",
-  "subsidiary_id": "123",
-  "transaction_date": "2026-05-12",
-  "shop_name": "Downtown Store",
-  "total_orders": 45,
-  "line_items": [
-    {
-      "item_id": "PROD-001",
-      "quantity": 125,
-      "rate": 19.99,
-      "amount": 2498.75
-    }
-  ],
-  "payments": [
-    {
-      "payment_method": "Credit Card",
-      "amount": 15234.50
-    }
-  ]
-}
-```
-
-### 3.5 Manual Sync Operations
-
-#### 3.5.1 Batch Order Sync
-
-**Location**: Point of Sale → Orders (list view)
-**Action**: "Sync to NetSuite" (multi-select action)
-
-**Business Rules**:
-- Will not allow syncing today's orders (must wait for EOD)
-- Will not allow syncing already synced orders
-- Will group orders by (shop, date) automatically
-- Will create one consolidated invoice per group
-
-**Wizard**: `netsuite.manual.sync.wizard`
-
-#### 3.5.2 Test Connection
-
-**Location**: NetSuite → Configuration
-**Button**: "Test Connection"
-
-**Validates**:
-- API URL reachability
-- OAuth credentials (if configured)
-- NetSuite account accessibility
-- Configuration endpoint availability
-
-### 3.6 User Interface
-
-**Proposed UI Components:**
-
-**Configuration Views**: Will be located in `NetSuite → Configuration` menu with forms for API credentials and sync settings.
-
-**POS Order Extensions**: Will include sync status column, NetSuite ID fields, and batch sync actions in Point of Sale → Orders list view.
-
-**Sync Logs**: Will provide comprehensive logging interface under NetSuite → Sync Logs with filters for type, status, and date range.
-
-**Mapping Views**: Will include subsidiary and payment method mapping screens under NetSuite → Mappings menu.
-
----
-
-## 4. NetSuite Implementation Details
-
-[TO BE DOCUMENTED BY NETSUITE DEVELOPMENT TEAM]
-
-
----
-
-## 5. API Specifications
-
-### 5.1 Odoo REST API Endpoints
-
-#### 5.1.1 Configuration Update Endpoint
-
-**Endpoint**: `/api/netsuite/config/update`
-**Method**: POST
-**Authentication**: Odoo Database Authentication
-**Purpose**: Receive configuration updates from NetSuite
-
-**Headers**:
-```http
-Content-Type: application/json
-db: {database_name}
-login: {user_login}
-password: {user_password}
-```
-
-**Request Body**:
-```json
-{
-  "configuration": {
-    "integration_mode": "scheduled",
-    "realtime_settings": {
-      "enabled": false,
-      "sync_on_order_confirmed": false
-    },
-    "scheduled_settings": {
-      "enabled": true,
-      "order_sync_time": "00:00",
-      "invoice_sync_time": "00:00",
-      "product_sync_frequency": "hourly",
-      "product_sync_hour_interval": 1
-    },
-    "retry_policy": {
-      "enabled": true,
-      "max_retries": 3,
-      "initial_delay_minutes": 5,
-      "use_exponential_backoff": true,
-      "backoff_multiplier": 2
-    },
-    "batch_processing": {
-      "order_batch_size": 100,
-      "invoice_batch_size": 100,
-      "product_batch_size": 50
-    },
-    "notification": {
-      "send_email_on_failure": true,
-      "send_email_on_success": false,
-      "notification_recipients": ["admin@example.com"]
-    },
-    "consolidation_rules": {
-      "consolidate_orders_per_shop_per_day": true,
-      "consolidate_invoices_per_shop_per_day": true,
-      "aggregate_line_items": true,
-      "group_by_product": true
-    }
-  },
-  "metadata": {
-    "config_version": "1.0",
-    "last_updated_by": "NetSuite System",
-    "last_updated_at": "2026-05-13T10:30:00Z",
-    "netsuite_environment": "production"
-  }
-}
-```
-
-**Success Response**:
-```json
-{
-  "success": true,
-  "message": "Configuration updated successfully",
-  "config_id": 1,
-  "applied_at": "2026-05-13T10:30:15Z"
-}
-```
-
-**Error Response**:
-```json
-{
-  "success": false,
-  "error": "Invalid configuration JSON structure",
-  "details": "Missing required field: configuration.integration_mode"
-}
-```
-
-### 5.2 NetSuite REST API Endpoints
-
-
-
-
-
-**Expected Request Payload** (from Odoo):
-```json
-{
-  "type": "consolidated_invoice",
-  "subsidiary_id": "123",
-  "transaction_date": "2026-05-12",
-  "shop_info": {
-    "odoo_warehouse_id": 1,
-    "shop_name": "Downtown Store",
-    "shop_code": "DS-001"
-  },
-  "summary": {
-    "total_orders": 45,
-    "total_line_items": 8,
-    "total_amount": 15234.50,
-    "total_tax": 1218.76
-  },
-  "line_items": [
-    {
-      "item_id": "PROD-001",
-      "item_name": "Product Name",
-      "quantity": 125.0,
-      "rate": 19.99,
-      "amount": 2498.75,
-      "tax_code": "TAX-STD"
-    }
-  ],
-  "payments": [
-    {
-      "payment_method_id": "PM-CC",
-      "payment_method_name": "Credit Card",
-      "amount": 10000.00,
-      "transaction_count": 28
-    },
-    {
-      "payment_method_id": "PM-CASH",
-      "payment_method_name": "Cash",
-      "amount": 5234.50,
-      "transaction_count": 17
-    }
-  ],
-  "metadata": {
-    "odoo_order_ids": [1001, 1002, 1003],
-    "sync_timestamp": "2026-05-13T00:05:00Z",
-    "odoo_user_id": 2,
-    "odoo_user_name": "System Scheduler"
-  }
-}
-```
-
-**Expected Response** (from NetSuite):
-```json
-{
-  "success": true,
-  "netsuite_invoice_id": "12345",
-  "netsuite_transaction_id": "INV-2026-05-12-001",
-  "created_at": "2026-05-13T00:05:10Z",
-  "message": "Consolidated invoice created successfully"
-}
-```
-
----
-
-## 6. Data Flow and Process Logic
-
-### 6.1 System Integration Flow
-
-**Proposed Integration Flow:**
-
-![POS to NetSuite Sync Flow](../diagrams/pos_netsuite_sync.png){width=75%}
-
-### 6.2 Consolidated Invoice Generation Flow
-
-**Proposed Consolidation Process:**
-
-![Order Consolidation Logic](../diagrams/order_consolidation.png){width=75%}
-
-### 6.3 End of Day Sync Process
-
-**Proposed EOD Sync Workflow:**
-
-![Order Consolidation Sync Sequence](../diagrams/order_consolidation_sync.png){width=75%}
-
-### 6.4 Product Sync Flow (Hourly)
-
-**Proposed Product Sync Process:**
-![Product Sync Flow](../diagrams/netsuite_product_sync.png){width=75%}
-
-### 6.5 Configuration Update Flow
-
-**Proposed Configuration Sync:**
-![Netsuite Odoo Config Flow](../diagrams/netsuite_odoo_config_sync.png){width=75%}
-
-### 6.6 Error Handling and Retry Flow
-
-![Error Handling and Retry Flow](../diagrams/sync_retry_logic.png){width=75%}
----
-
-## 7. Configuration Management
-
-### 7.1 Configuration Schema
-
-The complete configuration JSON schema is defined in `CONFIGURATION_SCHEMA.md`. Key sections:
-
-#### 7.1.1 Integration Modes
-
-| Mode | Description | Use Case |
-|------|-------------|----------|
-| `realtime` | Sync immediately on transaction confirmation | High-frequency, time-sensitive operations |
-| `scheduled` | Sync at configured times (EOD batch) | Normal operations, reduced API load |
-| `manual` | Sync only when manually triggered | Testing, controlled deployments |
-
-#### 7.1.2 Retry Policy Configuration
-
-```json
-{
-  "retry_policy": {
-    "enabled": true,
-    "max_retries": 3,
-    "initial_delay_minutes": 5,
-    "use_exponential_backoff": true,
-    "backoff_multiplier": 2
-  }
-}
-```
-
-**Retry Schedule Example**:
-- Attempt 1: Immediate
-- Attempt 2: After 5 minutes
-- Attempt 3: After 10 minutes (5 × 2)
-- Attempt 4: After 20 minutes (10 × 2)
-
-#### 7.1.3 Consolidation Rules
-
-```json
-{
-  "consolidation_rules": {
-    "consolidate_orders_per_shop_per_day": true,
-    "consolidate_invoices_per_shop_per_day": true,
-    "aggregate_line_items": true,
-    "group_by_product": true
-  }
-}
-```
-
-### 7.2 Configuration Synchronization
-
-**Planned Synchronization Approach:**
-
-**NetSuite → Odoo**:
-- NetSuite will push configuration changes via POST API
-- Odoo will validate and store JSON
-- Computed fields will automatically update
-- No Odoo restart required
-
-**Update Mechanism**:
-- Automatic: Via `/api/netsuite/config/update` endpoint when NetSuite configuration changes
-
-### 7.3 Configuration Validation
-
-**Odoo-Side Validation:**
-
-**Proposed Validation Logic:**
+**Purpose:** Add NetSuite sync fields to POS orders
 
 ```python
-def _validate_config_json(self, config_json):
-    """Validate NetSuite configuration JSON structure"""
-    required_keys = ['configuration', 'metadata']
-    if not all(key in config_json for key in required_keys):
-        raise ValidationError(_('Invalid configuration structure'))
+class PosOrder(models.Model):
+    _inherit = 'pos.order'
 
-    config = config_json['configuration']
-    if 'integration_mode' not in config:
-        raise ValidationError(_('Missing integration_mode'))
+    netsuite_sync_status = fields.Selection([
+        ('not_synced', 'Not Synced'),
+        ('synced', 'Synced'),
+        ('failed', 'Failed'),
+        ('pending', 'Pending')
+    ], string='NetSuite Sync Status', default='not_synced')
 
-    if config['integration_mode'] not in ['realtime', 'scheduled', 'manual']:
-        raise ValidationError(_('Invalid integration_mode value'))
+    netsuite_invoice_ref = fields.Char(
+        string='NetSuite Invoice Reference',
+        readonly=True
+    )
 
-    # Additional validations...
+    netsuite_last_sync = fields.Datetime(
+        string='Last Sync Attempt',
+        readonly=True
+    )
+
+    netsuite_error_message = fields.Text(
+        string='Sync Error Message',
+        readonly=True
+    )
+
+    def action_sync_to_netsuite(self):
+        """Manual sync action for selected orders"""
+        # Validate orders are from previous dates (not today)
+        today = fields.Date.today()
+        today_orders = self.filtered(lambda o: o.date_order.date() == today)
+
+        if today_orders:
+            raise UserError(
+                "Cannot manually sync orders from today. "
+                "Use end-of-day automatic sync."
+            )
+
+        # Trigger sync
+        sync_service = self.env['netsuite.consolidated.sync']
+        results = sync_service.sync_consolidated_orders(
+            warehouse_ids=self.mapped('session_id.config_id.warehouse_id').ids,
+            sync_all_dates=True,
+            sync_mode='manual'
+        )
+
+        return {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'message': f"Sync initiated for {len(self)} order(s) "
+                           f"grouped into {results['total_groups']} invoice(s)",
+                'type': 'success',
+            }
+        }
+```
+
+### 3.7 Sync Queue Model
+
+**File:** `models/netsuite_sync_queue.py`
+
+**Purpose:** Queue-based background job processing with retry logic
+
+```python
+class NetSuiteSyncQueue(models.Model):
+    _name = 'netsuite.sync.queue'
+    _description = 'NetSuite Sync Queue'
+    _order = 'create_date desc'
+
+    model_name = fields.Char(required=True)
+    record_ids = fields.Text(help='JSON array of record IDs')
+    operation = fields.Selection([
+        ('sync_order', 'Sync Order'),
+        ('sync_invoice', 'Sync Invoice'),
+        ('sync_product', 'Sync Product')
+    ], required=True)
+
+    state = fields.Selection([
+        ('draft', 'Draft'),
+        ('pending', 'Pending'),
+        ('processing', 'Processing'),
+        ('done', 'Done'),
+        ('failed', 'Failed')
+    ], default='draft')
+
+    retry_count = fields.Integer(default=0)
+    max_retries = fields.Integer(default=3)
+    next_retry = fields.Datetime()
+    error_message = fields.Text()
+
+    def process_queue_job(self):
+        """Process a single queue job with retry logic"""
+        config = self.env['netsuite.config'].get_active_config()
+
+        try:
+            self.state = 'processing'
+
+            # Get records to process
+            record_ids = json.loads(self.record_ids)
+            records = self.env[self.model_name].browse(record_ids)
+
+            # Execute operation
+            if self.operation == 'sync_order':
+                self._sync_orders(records)
+            elif self.operation == 'sync_product':
+                self._sync_products(records)
+
+            self.state = 'done'
+
+        except Exception as e:
+            self.retry_count += 1
+
+            if self.retry_count < config.config_max_retries:
+                self.state = 'pending'
+                self.next_retry = fields.Datetime.now() + timedelta(
+                    minutes=config.config_retry_delay_minutes
+                )
+                self.error_message = str(e)
+            else:
+                self.state = 'failed'
+                self.error_message = f"Failed after {self.retry_count} attempts: {str(e)}"
+```
+
+### 3.8 Sync Log Model
+
+**File:** `models/netsuite_sync_log.py`
+
+**Purpose:** Comprehensive audit trail
+
+```python
+class NetSuiteSyncLog(models.Model):
+    _name = 'netsuite.sync.log'
+    _description = 'NetSuite Sync Log'
+    _order = 'create_date desc'
+
+    reference = fields.Char(required=True)
+    operation = fields.Selection([
+        ('sync_consolidated_orders', 'Sync Consolidated Orders'),
+        ('sync_consolidated_invoices', 'Sync Consolidated Invoices'),
+        ('sync_products', 'Sync Products'),
+        ('fetch_config', 'Fetch Configuration')
+    ], required=True)
+
+    status = fields.Selection([
+        ('success', 'Success'),
+        ('failed', 'Failed'),
+        ('pending', 'Pending')
+    ], required=True)
+
+    request_payload = fields.Text()
+    response_payload = fields.Text()
+    execution_time_ms = fields.Integer()
+    error_details = fields.Text()
+
+    record_count = fields.Integer()
+    success_count = fields.Integer()
+    failed_count = fields.Integer()
+```
+
+### 3.9 Cron Jobs
+
+**File:** `data/netsuite_cron_data.xml`
+
+```xml
+<odoo>
+    <!-- Hourly Product Sync -->
+    <record id="cron_netsuite_fetch_products" model="ir.cron">
+        <field name="name">NetSuite: Fetch Products Hourly</field>
+        <field name="model_id" ref="model_netsuite_product_sync"/>
+        <field name="state">code</field>
+        <field name="code">model.sync_products_from_netsuite()</field>
+        <field name="interval_number">1</field>
+        <field name="interval_type">hours</field>
+        <field name="numbercall">-1</field>
+        <field name="active">True</field>
+    </record>
+
+    <!-- End of Day Order Sync -->
+    <record id="cron_netsuite_eod_sync" model="ir.cron">
+        <field name="name">NetSuite: End of Day Order Sync</field>
+        <field name="model_id" ref="model_netsuite_consolidated_sync"/>
+        <field name="state">code</field>
+        <field name="code">model.sync_consolidated_orders(sync_all_dates=False, sync_mode='scheduled')</field>
+        <field name="interval_number">1</field>
+        <field name="interval_type">days</field>
+        <field name="nextcall" eval="(DateTime.now() + timedelta(days=1)).replace(hour=23, minute=59)"/>
+        <field name="numbercall">-1</field>
+        <field name="active">True</field>
+    </record>
+</odoo>
 ```
 
 ---
 
-## 8. Security and Authentication
+## 4. NetSuite API Endpoints
 
-### 8.1 Odoo API Security
+Odoo communicates with NetSuite through the following RESTlet API endpoints:
 
-**Authentication Methods**:
-- Database name + Login + Password (API keys recommended)
-- Session-based authentication for UI access
+### 4.1 Configuration API
 
-**Access Control**:
-- Group: `NetSuite Integration User` (read access to logs, manual sync)
-- Group: `NetSuite Integration Manager` (full configuration access)
+**Purpose:** Fetch all integration settings from NetSuite
 
-### 8.2 Data Privacy
+**Endpoint:** `POST /app/site/hosting/restlet.nl?action=getConfig`
 
-- OAuth credentials will be stored in encrypted database fields
-- API responses will be logged for audit
-- Configuration options will control logging of sensitive data
+**Used By:** `netsuite.config.fetch_netsuite_config()` method
+
+**Frequency:** On-demand (manual button click) or scheduled
+
+### 4.2 Product Synchronization API
+
+**Purpose:** Fetch product/item catalog from NetSuite
+
+**Endpoint:** `POST /app/site/hosting/restlet.nl?action=syncItems`
+
+**Used By:** `netsuite.product.sync.sync_products_from_netsuite()` method
+
+**Frequency:** Hourly (automatic cron job) or on-demand
+
+### 4.3 Invoice Creation API
+
+**Purpose:** Post consolidated invoices to NetSuite
+
+**Endpoint:** `POST /app/site/hosting/restlet.nl?action=createInvoice`
+
+**Used By:** `netsuite.consolidated.sync.sync_consolidated_orders()` method
+
+**Frequency:** Daily at end-of-day (23:59) or manual batch sync
+
+---
+
+## 5. Data Flows
+
+### 5.1 End-of-Day Sync Flow
+
+**Sequence Diagram:**
+
+```
+User/Cron → Odoo Sync Service → Odoo API Client → NetSuite → Database
+    │             │                    │              │           │
+    ├─ Trigger ──>│                    │              │           │
+    │             ├─ Find orders       │              │           │
+    │             ├─ Group by shop     │              │           │
+    │             ├─ Aggregate lines   │              │           │
+    │             ├─ Build payload ──>│              │           │
+    │             │                    ├─ POST ──────>│           │
+    │             │                    │              ├─ Create ─>│
+    │             │                    │              ├<─ ID ─────┤
+    │             │                    │<─ Response ──┤           │
+    │             │<─ Result ──────────┤              │           │
+    │             ├─ Update status     │              │           │
+    │             ├─ Log result        │              │           │
+    │<─ Done ─────┤                    │              │           │
+```
+
+### 5.2 Product Sync Flow
+
+**Sequence Diagram:**
+
+```
+Cron → Odoo Product Sync → API Client → NetSuite → Odoo DB
+  │           │                 │           │          │
+  ├─ Hourly ─>│                 │           │          │
+  │           ├─ Request ──────>│           │          │
+  │           │                 ├─ GET ────>│          │
+  │           │                 │<─ Items ──┤          │
+  │           │<─ Products ─────┤           │          │
+  │           ├─ For each item: │           │          │
+  │           ├─ Search by NS ID│           │          │
+  │           ├─ Create/Update ─┼───────────┼─────────>│
+  │           ├─ Update status  │           │          │
+  │<─ Done ───┤                 │           │          │
+```
 
 ---
 
-## 9. Error Handling and Logging
+## 6. Configuration Management
 
-### 9.1 Error Categories
+### 6.1 Configuration Workflow
 
-| Category | Severity | Handling Strategy |
-|----------|----------|-------------------|
-| **Network Errors** | High | Automatic retry with exponential backoff |
-| **Authentication Errors** | Critical | Manual intervention required, notify admin |
-| **Validation Errors** | Medium | Log and skip, notify for manual review |
-| **Business Logic Errors** | Medium | Retry with same payload |
-| **Configuration Errors** | Critical | Halt sync, notify admin immediately |
+1. **Admin creates config** in Odoo (NetSuite → Configuration)
+2. **Admin fills credentials** (API URL, OAuth keys)
+3. **Admin clicks "Fetch Config from NetSuite"**
+4. **Odoo calls NetSuite API** (getConfig action)
+5. **NetSuite returns JSON** with all business logic settings
+6. **Odoo stores JSON** in `netsuite_config` field
+7. **Odoo computes** 50+ readonly fields from JSON
+8. **Configuration used** by all sync operations
 
-### 9.2 Logging Strategy
+### 6.2 Configuration Fields Mapping
 
-**Proposed Logging Approach:**
-
-#### 9.2.1 Sync Log Fields
-
-Each sync operation will create a log entry with:
-- Request timestamp
-- Request payload (configurable)
-- Response payload (configurable)
-- HTTP status code
-- Execution time (milliseconds)
-- Error message (if failed)
-- Retry count
-- Related Odoo records
-
-#### 9.2.2 Log Retention
-
-**Configuration:**
-
-```json
-{
-  "logging": {
-    "log_retention_days": 90
-  }
-}
-```
-
-Automated cleanup cron job will remove logs older than the retention period.
-
-#### 9.2.3 Error Notifications
-
-**Email Notifications**:
-- Configurable recipients list
-- Template: Sync failure summary
-- Trigger conditions:
-  - Max retries exhausted
-  - Authentication failure
-  - Configuration fetch failure
-
-**Sample Notification**:
-```
-Subject: NetSuite Sync Failure - Immediate Attention Required
-
-Dear Administrator,
-
-A NetSuite synchronization operation has failed after exhausting all retry attempts.
-
-Details:
-- Sync Type: Consolidated Invoice
-- Shop: Downtown Store
-- Date: 2026-05-12
-- Total Orders: 45
-- Error: Connection timeout after 60 seconds
-- Attempts: 4/3
-- Last Attempt: 2026-05-13 01:35:00 UTC
-
-Action Required:
-Please review the sync logs and manually retry if necessary.
-
-View Logs: [Link to Odoo Sync Logs]
-```
-
-### 9.3 Monitoring and Alerts
-
-**Key Metrics to Monitor**:
-- Sync success rate (daily/weekly)
-- Average execution time
-- Failed sync count
-- Retry frequency
-- Configuration fetch failures
-
-**Monitoring Tools**:
-- Odoo built-in logging system
+| NetSuite JSON Key | Odoo Computed Field | Type | Default |
+|-------------------|---------------------|------|---------|
+| `integration_mode` | `config_integration_mode` | Selection | scheduled |
+| `hourly_sync_enabled` | `config_hourly_sync_enabled` | Boolean | True |
+| `max_retries` | `config_max_retries` | Integer | 3 |
+| `retry_delay_minutes` | `config_retry_delay_minutes` | Integer | 5 |
+| `send_email_on_failure` | `config_send_email_on_failure` | Boolean | True |
 
 ---
+
+## 7. Security & Authentication
+
+### 7.1 OAuth 1.0 Authentication
+
+**For Production NetSuite:**
+
+```python
+def _build_oauth_headers(self, config, url, method='POST'):
+    oauth_params = {
+        'oauth_consumer_key': config.consumer_key,
+        'oauth_token': config.token_id,
+        'oauth_signature_method': 'HMAC-SHA256',
+        'oauth_timestamp': str(int(time.time())),
+        'oauth_nonce': base64.b64encode(os.urandom(32)).decode('utf-8'),
+        'oauth_version': '1.0'
+    }
+
+    # Build base string
+    base_string = f"{method}&{quote(url, safe='')}&{quote(param_string, safe='')}"
+
+    # Generate signature
+    signing_key = f"{quote(config.consumer_secret, safe='')}&{quote(config.token_secret, safe='')}"
+    signature = hmac.new(
+        signing_key.encode(),
+        base_string.encode(),
+        hashlib.sha256
+    ).digest()
+    oauth_params['oauth_signature'] = base64.b64encode(signature).decode()
+
+    # Build Authorization header
+    auth_header = 'OAuth ' + ', '.join([
+        f'{k}="{quote(str(v), safe="")}"'
+        for k, v in sorted(oauth_params.items())
+    ])
+
+    return {'Authorization': auth_header}
+```
+
+### 7.2 Access Control
+
+**Security Groups:**
+
+```xml
+<record id="group_netsuite_user" model="res.groups">
+    <field name="name">NetSuite User</field>
+    <field name="comment">Can view sync logs and status</field>
+</record>
+
+<record id="group_netsuite_manager" model="res.groups">
+    <field name="name">NetSuite Manager</field>
+    <field name="implied_ids" eval="[(4, ref('group_netsuite_user'))]"/>
+    <field name="comment">Can configure and trigger syncs</field>
+</record>
+```
+
+**Access Rights** (`ir.model.access.csv`):
+
+```csv
+id,name,model_id:id,group_id:id,perm_read,perm_write,perm_create,perm_unlink
+access_netsuite_config_user,netsuite.config.user,model_netsuite_config,group_netsuite_user,1,0,0,0
+access_netsuite_config_manager,netsuite.config.manager,model_netsuite_config,group_netsuite_manager,1,1,1,0
+access_netsuite_sync_log_user,netsuite.sync.log.user,model_netsuite_sync_log,group_netsuite_user,1,0,0,0
+```
+
+---
+
+## 8. Error Handling & Logging
+
+### 8.1 Error Categories & Handling
+
+| Error Type | Retry? | Notification | Action |
+|------------|--------|--------------|--------|
+| **Network Timeout** | Yes (3x) | On final failure | Log + Email |
+| **500 Server Error** | Yes (3x) | On final failure | Log + Email |
+| **401 Auth Error** | No | Immediate | Critical Alert |
+| **400 Bad Request** | No | Immediate | Log + Email |
+| **Invalid Data** | No | Immediate | Log + Mark Failed |
+
+### 8.2 Logging Strategy
+
+**Sync Log Fields:**
+
+```python
+sync_log = self.env['netsuite.sync.log'].create({
+    'reference': f"EOD-{order_date}",
+    'operation': 'sync_consolidated_orders',
+    'status': 'success',
+    'request_payload': json.dumps(payload) if config.log_request else None,
+    'response_payload': json.dumps(response) if config.log_response else None,
+    'execution_time_ms': duration_ms,
+    'record_count': len(orders),
+    'success_count': len(orders),
+    'failed_count': 0
+})
+```
+
+---
+
+## 9. Deployment Guide
+
+### 9.1 Production Deployment
+
+**Prerequisites:**
+- NetSuite account with RESTlet deployment
+- OAuth 1.0 credentials generated
+- Odoo 17.0 production instance
+
+**Steps:**
+
+1. **Deploy RESTlet to NetSuite**
+   - Upload SuiteScript file
+   - Deploy as RESTlet
+   - Note deployment URL
+
+2. **Install Odoo Module**
+   ```bash
+   # Copy module to addons
+   cp -r netsuite_pos_integration /opt/odoo/addons/
+
+   # Upgrade module
+   odoo --update=netsuite_pos_integration -d production_db
+   ```
+
+3. **Configure in Odoo**
+   - Navigate to NetSuite → Configuration
+   - Enter production API URL
+   - Add OAuth credentials
+   - Fetch configuration
+   - Test connection
+
+4. **Setup Shop Mappings**
+   - Create subsidiary mappings for all warehouses
+
+5. **Enable Cron Jobs**
+   - Verify cron jobs are active
+   - Test manual execution first
+
+---
+
+---
+
+## Conclusion
+
+This Odoo module provides a **production-ready integration** with NetSuite ERP for Point of Sale systems. The implementation focuses on:
+
+**Key Implementation Features:**
+- **Modular Architecture**: Clean separation of concerns with dedicated models for sync, configuration, logging, and queue management
+- **Consolidated Invoicing**: Reduces API calls by aggregating orders per shop per day
+- **Queue-Based Processing**: Non-blocking background jobs with automatic retry
+- **Comprehensive Audit Trail**: Full sync logs with configurable payload logging
+- **NetSuite-Controlled Configuration**: Dynamic business logic changes without code deployment
+- **Extensible Design**: Easy to add new sync operations or custom fields
+
+**Odoo Module Components:**
+- Configuration model with computed fields from NetSuite
+- API client with OAuth 1.0 authentication
+- Consolidated sync service for orders/invoices
+- Product sync service for catalog updates
+- Queue model for background processing
+- Sync log model for audit trail
+- Extended POS order and product models
+- Automated cron jobs for scheduled sync
+
+**For more details, see:**
+- [ARCHITECTURE.md](ARCHITECTURE.md) - System architecture and design patterns
+- [QUICK_START.md](QUICK_START.md) - Setup and configuration guide
+- `Implementation/` folder - Feature-specific implementation guides

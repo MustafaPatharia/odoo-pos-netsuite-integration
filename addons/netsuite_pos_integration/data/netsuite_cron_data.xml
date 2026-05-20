@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <odoo>
-    <data noupdate="0">
+    <data noupdate="1">
 
         <!-- ========================================== -->
         <!-- CRON 1: Hourly Product Sync from NetSuite -->
@@ -36,15 +36,13 @@
         <!-- ========================================== -->
         <!-- CRON 2: Daily Consolidated Order Sync (Midnight) -->
         <!-- ========================================== -->
+        <!-- PRODUCTION VERSION (Commented for testing) -->
+        <!--
         <record id="ir_cron_netsuite_order_sync" model="ir.cron">
             <field name="name">NetSuite: Sync Consolidated Orders Daily</field>
             <field name="model_id" ref="model_netsuite_consolidated_sync"/>
             <field name="state">code</field>
-            <field name="code">
-config = env['netsuite.config'].search([('active', '=', True)], limit=1)
-if config and config.config_integration_mode == 'scheduled':
-    result = model.sync_consolidated_orders(sync_all_dates=False)
-            </field>
+            <field name="code">result = model.sync_consolidated_orders(sync_all_dates=False, sync_mode='scheduled')</field>
             <field name="interval_number">1</field>
             <field name="interval_type">days</field>
             <field name="numbercall">-1</field>
@@ -52,23 +50,49 @@ if config and config.config_integration_mode == 'scheduled':
             <field name="active" eval="True"/>
             <field name="doall" eval="False"/>
         </record>
+        -->
+
+        <!-- TESTING VERSION (Every 1 minute) -->
+        <record id="ir_cron_netsuite_order_sync" model="ir.cron">
+            <field name="name">NetSuite: Sync Consolidated Orders Every 1min (TESTING)</field>
+            <field name="model_id" ref="model_netsuite_consolidated_sync"/>
+            <field name="state">code</field>
+            <field name="code">result = model.sync_consolidated_orders(sync_all_dates=False, sync_mode='scheduled')</field>
+            <field name="interval_number">1</field>
+            <field name="interval_type">minutes</field>
+            <field name="numbercall">-1</field>
+            <field name="active" eval="True"/>
+            <field name="doall" eval="False"/>
+        </record>
 
         <!-- ========================================== -->
         <!-- CRON 3: Daily Consolidated Invoice Sync (Midnight) -->
         <!-- ========================================== -->
+        <!-- PRODUCTION VERSION (Commented for testing) -->
+        <!--
         <record id="ir_cron_netsuite_invoice_sync" model="ir.cron">
             <field name="name">NetSuite: Sync Consolidated Invoices Daily</field>
             <field name="model_id" ref="model_netsuite_consolidated_sync"/>
             <field name="state">code</field>
-            <field name="code">
-config = env['netsuite.config'].search([('active', '=', True)], limit=1)
-if config and config.config_integration_mode == 'scheduled':
-    result = model.sync_consolidated_invoices()
-            </field>
+            <field name="code">result = model.sync_consolidated_invoices(sync_mode='scheduled')</field>
             <field name="interval_number">1</field>
             <field name="interval_type">days</field>
             <field name="numbercall">-1</field>
             <field name="nextcall" eval="(DateTime.now() + timedelta(days=1)).replace(hour=0, minute=10, second=0)"/>
+            <field name="active" eval="True"/>
+            <field name="doall" eval="False"/>
+        </record>
+        -->
+
+        <!-- TESTING VERSION (Every 1 minute) -->
+        <record id="ir_cron_netsuite_invoice_sync" model="ir.cron">
+            <field name="name">NetSuite: Sync Consolidated Invoices Every 1min (TESTING)</field>
+            <field name="model_id" ref="model_netsuite_consolidated_sync"/>
+            <field name="state">code</field>
+            <field name="code">result = model.sync_consolidated_invoices(sync_mode='scheduled')</field>
+            <field name="interval_number">1</field>
+            <field name="interval_type">minutes</field>
+            <field name="numbercall">-1</field>
             <field name="active" eval="True"/>
             <field name="doall" eval="False"/>
         </record>

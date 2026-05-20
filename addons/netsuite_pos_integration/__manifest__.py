@@ -58,6 +58,7 @@ Technical Highlights:
         'views/netsuite_operations_views.xml',
         'views/product_views.xml',
         'views/pos_order_views.xml',
+        'views/invoice_views.xml',
         'views/netsuite_menu.xml',
     ],
     'assets': {
