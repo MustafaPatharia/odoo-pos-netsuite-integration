@@ -141,16 +141,15 @@ class NetSuiteConsolidatedSync(models.AbstractModel):
 
         self._log_debug(config, '[NetSuite EOD Orders] ========== SYNC STARTED ==========')
 
-        # Determine consolidation behavior based on integration mode
-        # Real-time mode: FORCE 1:1 sync (manual button acts as fallback when realtime fails)
-        # Scheduled/Manual mode: Respect consolidation flag (N:1 or 1:1 based on config)
-        force_individual_sync = config.config_integration_mode == 'realtime'
-        use_consolidation = config.config_consolidate_orders and not force_individual_sync
+        # Determine consolidation behavior based on config flag ONLY
+        # Integration mode determines WHEN sync happens, not HOW
+        # - Realtime: Auto 1:1 sync on create, Manual button = fallback for TODAY's failures
+        # - Scheduled: Cron syncs YESTERDAY, Manual button = emergency override for YESTERDAY
+        # - Manual: No auto sync, Manual button = primary sync mechanism
+        use_consolidation = config.config_consolidate_orders
 
-        if force_individual_sync:
-            self._log_debug(config, '[NetSuite EOD Orders] Real-time mode detected: Forcing 1:1 individual sync (fallback mode)')
-        else:
-            self._log_debug(config, f'[NetSuite EOD Orders] Consolidation enabled: {use_consolidation}')
+        self._log_debug(config, f'[NetSuite EOD Orders] Integration mode: {config.config_integration_mode}')
+        self._log_debug(config, f'[NetSuite EOD Orders] Consolidation enabled: {use_consolidation}')
 
         self._log_debug(config, f'[NetSuite EOD Orders] Sync mode: {"ALL DATES" if sync_all_dates else "SINGLE DATE"}')
         self._log_debug(config, f'[NetSuite EOD Orders] Using config: {config.name} (API: {config.api_url})')
@@ -171,14 +170,29 @@ class NetSuiteConsolidatedSync(models.AbstractModel):
             'request_payload': '',  # Will be updated during sync
         })
 
-        # Get orders based on sync mode
+        # Get orders based on sync mode and integration mode
         if sync_all_dates:
-            # Manual mode: Get ALL past unsynced orders (exclude today)
-            pos_orders = self._get_all_unsynced_orders(warehouse_ids)
+            # Manual button in Manual/Realtime mode: Get ALL unsynced orders
+            # Realtime mode: Include TODAY (fallback for failed realtime syncs)
+            # Manual/Scheduled mode: Exclude TODAY (EOD only)
+            if config.config_integration_mode == 'realtime':
+                pos_orders = self._get_all_unsynced_orders_including_today(warehouse_ids)
+                self._log_debug(config, '[NetSuite EOD Orders] Realtime fallback: Including TODAY for failed syncs')
+            else:
+                pos_orders = self._get_all_unsynced_orders(warehouse_ids)
+                self._log_debug(config, '[NetSuite EOD Orders] Manual/Scheduled mode: Excluding TODAY')
         else:
-            # Cron mode: Get orders for specific date only
+            # Cron mode OR Manual button with specific date
             if not target_date:
-                target_date = (datetime.now() - timedelta(days=1)).date()
+                # Default target date depends on integration mode
+                if config.config_integration_mode == 'realtime' and sync_mode == 'manual':
+                    # Realtime + Manual button = TODAY (fallback)
+                    target_date = datetime.now().date()
+                    self._log_debug(config, '[NetSuite EOD Orders] Realtime fallback: Using TODAY')
+                else:
+                    # Scheduled/Manual mode = YESTERDAY (EOD)
+                    target_date = (datetime.now() - timedelta(days=1)).date()
+                    self._log_debug(config, '[NetSuite EOD Orders] Scheduled/Manual mode: Using YESTERDAY')
             elif isinstance(target_date, str):
                 target_date = datetime.strptime(target_date, '%Y-%m-%d').date()
             pos_orders = self._get_orders_for_date(target_date, warehouse_ids)
@@ -383,20 +397,26 @@ class NetSuiteConsolidatedSync(models.AbstractModel):
 
         self._log_debug(config, '[NetSuite EOD Invoices] ========== SYNC STARTED ==========')
 
-        # Determine consolidation behavior based on integration mode
-        # Real-time mode: FORCE 1:1 sync (manual button acts as fallback when realtime fails)
-        # Scheduled/Manual mode: Respect consolidation flag (N:1 or 1:1 based on config)
-        force_individual_sync = config.config_integration_mode == 'realtime'
-        use_consolidation = config.config_consolidate_invoices and not force_individual_sync
+        # Determine consolidation behavior based on config flag ONLY
+        # Integration mode determines WHEN sync happens, not HOW
+        # - Realtime: Auto 1:1 sync on create, Manual button = fallback for TODAY's failures
+        # - Scheduled: Cron syncs YESTERDAY, Manual button = emergency override for YESTERDAY
+        # - Manual: No auto sync, Manual button = primary sync mechanism
+        use_consolidation = config.config_consolidate_invoices
 
-        if force_individual_sync:
-            self._log_debug(config, '[NetSuite EOD Invoices] Real-time mode detected: Forcing 1:1 individual sync (fallback mode)')
-        else:
-            self._log_debug(config, f'[NetSuite EOD Invoices] Consolidation enabled: {use_consolidation}')
+        self._log_debug(config, f'[NetSuite EOD Invoices] Integration mode: {config.config_integration_mode}')
+        self._log_debug(config, f'[NetSuite EOD Invoices] Consolidation enabled: {use_consolidation}')
 
-        # Determine target date
+        # Determine target date based on integration mode
         if not target_date:
-            target_date = (datetime.now() - timedelta(days=1)).date()
+            if config.config_integration_mode == 'realtime' and sync_mode == 'manual':
+                # Realtime + Manual button = TODAY (fallback for failed realtime syncs)
+                target_date = datetime.now().date()
+                self._log_debug(config, '[NetSuite EOD Invoices] Realtime fallback: Using TODAY')
+            else:
+                # Scheduled/Manual mode = YESTERDAY (EOD)
+                target_date = (datetime.now() - timedelta(days=1)).date()
+                self._log_debug(config, '[NetSuite EOD Invoices] Scheduled/Manual mode: Using YESTERDAY')
         elif isinstance(target_date, str):
             target_date = datetime.strptime(target_date, '%Y-%m-%d').date()
 
@@ -625,6 +645,22 @@ class NetSuiteConsolidatedSync(models.AbstractModel):
 
         orders = self.env['pos.order'].search(domain, order='date_order asc')
         _logger.info(f'[NetSuite EOD Orders] Found {len(orders)} unsynced orders from past dates')
+        return orders
+
+    def _get_all_unsynced_orders_including_today(self, warehouse_ids=None):
+        """Get ALL unsynced POS orders (INCLUDING today - for realtime fallback)"""
+        domain = [
+            ('state', 'in', ['paid', 'done', 'invoiced']),
+            '|',
+            ('netsuite_sync_status', 'in', ['not_synced', 'failed']),
+            ('netsuite_sync_status', '=', False),
+        ]
+
+        if warehouse_ids:
+            domain.append(('config_id', 'in', warehouse_ids))
+
+        orders = self.env['pos.order'].search(domain, order='date_order asc')
+        _logger.info(f'[NetSuite EOD Orders] Found {len(orders)} unsynced orders (including today for realtime fallback)')
         return orders
 
     def _get_orders_for_date(self, target_date, warehouse_ids=None):
