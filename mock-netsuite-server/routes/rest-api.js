@@ -182,4 +182,139 @@ router.get('/:recordType/:id', (req, res) => {
   }
 });
 
+/**
+ * POST /services/rest/record/v1/salesorder - Create Sales Order
+ * NetSuite Standard REST API
+ */
+router.post('/salesorder', (req, res) => {
+  try {
+    console.log('\n=== NetSuite Standard REST API: POST /salesorder ===');
+    console.log('Payload:', JSON.stringify(req.body, null, 2));
+
+    const orderId = String(Date.now());
+    const tranId = `SO-${orderId}`;
+    const tranDate = req.body.tranDate || new Date().toISOString().split('T')[0];
+
+    const order = {
+      id: orderId,
+      tranId: tranId,
+      ...req.body,
+      createdDate: new Date().toISOString(),
+      lastModifiedDate: new Date().toISOString(),
+      status: 'Pending Fulfillment'
+    };
+
+    mockDatabase.salesOrders.set(orderId, order);
+    mockDatabase.syncLogs.push({
+      timestamp: new Date().toISOString(),
+      type: 'salesorder',
+      action: 'CREATE',
+      id: orderId,
+      tranId: tranId,
+      payload: req.body
+    });
+
+    // Save to JSON file
+    if (req.app && req.app.locals && req.app.locals.saveToFile) {
+      req.app.locals.saveToFile('order', tranDate, order);
+    }
+
+    console.log(`✅ Sales Order created: ${tranId} (ID: ${orderId})`);
+
+    // NetSuite Standard REST API response format (201 Created)
+    res.status(201).json({
+      id: orderId,
+      tranId: tranId,
+      links: [
+        {
+          rel: 'self',
+          href: `/services/rest/record/v1/salesorder/${orderId}`
+        }
+      ]
+    });
+
+  } catch (error) {
+    console.error('Error creating sales order:', error);
+    res.status(500).json({
+      'o:errorCode': 'INTERNAL_ERROR',
+      'o:errorDetails': [{
+        detail: error.message,
+        'o:errorCode': 'INTERNAL_ERROR'
+      }],
+      title: 'Internal Server Error',
+      status: 500
+    });
+  }
+});
+
+/**
+ * POST /services/rest/record/v1/invoice - Create Invoice
+ * NetSuite Standard REST API
+ */
+router.post('/invoice', (req, res) => {
+  try {
+    console.log('\n=== NetSuite Standard REST API: POST /invoice ===');
+    console.log('Payload:', JSON.stringify(req.body, null, 2));
+
+    const invoiceId = String(Date.now() + Math.floor(Math.random() * 1000));
+    const tranId = `INV-${invoiceId}`;
+    const tranDate = req.body.tranDate || new Date().toISOString().split('T')[0];
+
+    const invoice = {
+      id: invoiceId,
+      tranId: tranId,
+      ...req.body,
+      createdDate: new Date().toISOString(),
+      lastModifiedDate: new Date().toISOString(),
+      status: 'Open'
+    };
+
+    // Store invoice (add invoices map to mockDatabase if needed)
+    if (!mockDatabase.invoices) {
+      mockDatabase.invoices = new Map();
+    }
+    mockDatabase.invoices.set(invoiceId, invoice);
+    
+    mockDatabase.syncLogs.push({
+      timestamp: new Date().toISOString(),
+      type: 'invoice',
+      action: 'CREATE',
+      id: invoiceId,
+      tranId: tranId,
+      payload: req.body
+    });
+
+    // Save to JSON file
+    if (req.app && req.app.locals && req.app.locals.saveToFile) {
+      req.app.locals.saveToFile('invoice', tranDate, invoice);
+    }
+
+    console.log(`✅ Invoice created: ${tranId} (ID: ${invoiceId})`);
+
+    // NetSuite Standard REST API response format (201 Created)
+    res.status(201).json({
+      id: invoiceId,
+      tranId: tranId,
+      links: [
+        {
+          rel: 'self',
+          href: `/services/rest/record/v1/invoice/${invoiceId}`
+        }
+      ]
+    });
+
+  } catch (error) {
+    console.error('Error creating invoice:', error);
+    res.status(500).json({
+      'o:errorCode': 'INTERNAL_ERROR',
+      'o:errorDetails': [{
+        detail: error.message,
+        'o:errorCode': 'INTERNAL_ERROR'
+      }],
+      title: 'Internal Server Error',
+      status: 500
+    });
+  }
+});
+
 module.exports = router;
