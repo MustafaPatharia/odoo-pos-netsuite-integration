@@ -39,17 +39,6 @@ Content-Type: application/json
 - `"scheduled"` - Sync at scheduled times (respects consolidation flag)
 - `"manual"` - Manual sync only (respects consolidation flag)
 
----
-
-### `realtime_settings`
-**Type:** `object`
-
-| Property | Type | Valid Values | Default |
-|----------|------|--------------|---------|
-| `enabled` | boolean | `true` \| `false` | `false` |
-| `sync_on_order_confirmed` | boolean | `true` \| `false` | `false` |
-| `sync_on_invoice_validated` | boolean | `true` \| `false` | `false` |
-| `immediate_payment_sync` | boolean | `true` \| `false` | `false` |
 
 ---
 
@@ -157,6 +146,7 @@ Content-Type: application/json
 
 ## Example Request
 
+### Scheduled Mode (Consolidated Sync at EOD)
 ```bash
 curl -X POST http://localhost:8069/api/netsuite/config/update \
   -H "X-API-Key: your_api_key_here" \
@@ -164,12 +154,6 @@ curl -X POST http://localhost:8069/api/netsuite/config/update \
   -d '{
   "configuration": {
     "integration_mode": "scheduled",
-    "realtime_settings": {
-      "enabled": false,
-      "sync_on_order_confirmed": false,
-      "sync_on_invoice_validated": false,
-      "immediate_payment_sync": false
-    },
     "scheduled_settings": {
       "enabled": true,
       "order_sync_time": "00:00",
@@ -177,10 +161,9 @@ curl -X POST http://localhost:8069/api/netsuite/config/update \
       "product_sync_frequency": "hourly",
       "product_sync_hour_interval": 1
     },
-    "manual_execution": {
-      "enabled": true,
-      "allow_retry_failed": true,
-      "allow_test_connection": true
+    "consolidation_rules": {
+      "consolidate_orders": true,
+      "consolidate_invoices": true
     },
     "retry_policy": {
       "enabled": true,
@@ -189,27 +172,40 @@ curl -X POST http://localhost:8069/api/netsuite/config/update \
       "use_exponential_backoff": true,
       "backoff_multiplier": 2
     },
-    "notification": {
-      "send_email_on_failure": true,
-      "send_email_on_success": false,
-      "notification_recipients": [
-        "admin@example.com",
-        "integration@example.com"
-      ]
-    },
     "logging": {
       "enable_debug_logging": false,
       "log_retention_days": 90,
       "log_request_payload": true,
       "log_response_payload": true
-    },
-    "consolidation_rules": {
-      "consolidate_orders": true,
-      "consolidate_invoices": true
     }
   }
 }'
 ```
+
+### Real-Time Mode (Immediate 1:1 Sync)
+```bash
+curl -X POST http://localhost:8069/api/netsuite/config/update \
+  -H "X-API-Key: your_api_key_here" \
+  -H "Content-Type: application/json" \
+  -d '{
+  "configuration": {
+    "integration_mode": "realtime",
+    "consolidation_rules": {
+      "consolidate_orders": false,
+      "consolidate_invoices": false
+    },
+    "retry_policy": {
+      "enabled": true,
+      "max_retries": 3,
+      "initial_delay_minutes": 5,
+      "use_exponential_backoff": true,
+      "backoff_multiplier": 2
+    }
+  }
+}'
+```
+
+**Note:** In realtime mode, both orders and invoices sync immediately (1:1) when created/confirmed. No need to set granular flags.
 
 ---
 
@@ -222,6 +218,11 @@ curl -X POST http://localhost:8069/api/netsuite/config/update \
 - `notification.notification_recipients`: Array of valid email addresses
 - **Real-time mode constraint**: `consolidate_orders` and `consolidate_invoices` must be `false`
 
+**Deprecated Fields (Kept for Backward Compatibility):**
+- `realtime_settings.sync_on_order_confirmed` - Not used in sync logic
+- `realtime_settings.sync_on_invoice_validated` - Not used in sync logic
+- `realtime_settings.enabled` - Use `integration_mode` instead
+
 ---
 
 ## Notes
@@ -230,3 +231,19 @@ curl -X POST http://localhost:8069/api/netsuite/config/update \
 2. **API Key:** Generate in Odoo: Settings → Users → Technical Settings → API Keys
 3. **Idempotent:** Multiple calls with same payload update configuration each time
 4. **Storage:** Configuration stored as JSON in `netsuite.config.netsuite_config` field
+
+### Sync Behavior by Mode
+
+**Realtime Mode (`integration_mode: "realtime"`):**
+- Orders sync immediately when state changes to paid/done/invoiced (1:1)
+- Invoices sync immediately when posted (1:1)
+- `consolidate_orders` and `consolidate_invoices` must be `false`
+
+**Scheduled Mode (`integration_mode: "scheduled"`):**
+- Orders sync at configured `order_sync_time` (EOD)
+- Invoices sync at configured `invoice_sync_time` (EOD)
+- Supports consolidation (N:1) if enabled
+
+**Manual Mode (`integration_mode: "manual"`):**
+- No automatic sync
+- User must trigger sync manually from Odoo UI

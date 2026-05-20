@@ -78,12 +78,8 @@ class AccountMove(models.Model):
         """Automatically sync invoice to NetSuite based on configuration"""
         config = self.env['netsuite.config'].search([('active', '=', True)], limit=1)
 
-        # Only sync if realtime mode is enabled and invoice sync is enabled
+        # Only sync if realtime mode is enabled
         if not config or config.config_integration_mode != 'realtime':
-            return
-
-        # Check if sync on invoice validated is enabled
-        if not config.config_sync_on_invoice_validated:
             return
 
         api_client = self.env['netsuite.api.client']
@@ -101,12 +97,9 @@ class AccountMove(models.Model):
             if invoice.state != 'posted':
                 continue
 
-            # Only sync paid/in_payment invoices (or posted for immediate sync)
-            if invoice.payment_state not in ['paid', 'in_payment', 'not_paid']:
-                continue
-
             # Check if this invoice is from a POS order
-            pos_order = self.env['pos.order'].search([('account_move', '=', invoice.id)], limit=1)
+            # Use pos_order_ids Many2many field (standard Odoo)
+            pos_order = invoice.pos_order_ids[:1] if invoice.pos_order_ids else False
 
             if pos_order:
                 # Direct sync for POS invoices (individual, not consolidated)
@@ -149,40 +142,25 @@ class AccountMove(models.Model):
 
     @api.model_create_multi
     def create(self, vals_list):
-        """Override create to trigger auto-sync when invoice is created from POS"""
+        """Override create - sync happens in write() when invoice is posted"""
         invoices = super(AccountMove, self).create(vals_list)
-
-        # Check if realtime sync is enabled
-        config = self.env['netsuite.config'].search([('active', '=', True)], limit=1)
-        if config and config.config_integration_mode == 'realtime' and config.config_sync_on_invoice_validated:
-            # Filter invoices that should be synced immediately
-            invoices_to_sync = invoices.filtered(
-                lambda inv: inv.move_type == 'out_invoice'
-                and inv.state == 'posted'
-            )
-
-            if invoices_to_sync:
-                _logger.info(f'[NetSuite Invoice Realtime] New invoice(s) created, triggering auto-sync for {len(invoices_to_sync)} invoice(s)')
-                # Delay sync slightly to ensure POS order link is established
-                invoices_to_sync.with_delay()._auto_sync_to_netsuite() if hasattr(invoices_to_sync, 'with_delay') else invoices_to_sync._auto_sync_to_netsuite()
-
+        # Note: Auto-sync is handled in write() method when state='posted'
+        # to ensure POS order link (pos_order_ids) is established first
         return invoices
 
     def write(self, vals):
-        """Override write to trigger auto-sync on state/payment_state change"""
+        """Override write to trigger auto-sync when invoice is posted"""
         result = super(AccountMove, self).write(vals)
 
-        # Check if invoice was posted or payment state changed to paid
-        state_changed = 'state' in vals and vals.get('state') == 'posted'
-        payment_changed = 'payment_state' in vals and vals.get('payment_state') in ['paid', 'in_payment']
-
-        if state_changed or payment_changed:
+        # Realtime mode: sync immediately when invoice is posted
+        if 'state' in vals and vals.get('state') == 'posted':
             config = self.env['netsuite.config'].search([('active', '=', True)], limit=1)
-            if config and config.config_integration_mode == 'realtime' and config.config_sync_on_invoice_validated:
-                # Filter only customer invoices that are posted
+            if config and config.config_integration_mode == 'realtime':
+                # Filter only customer invoices
                 invoices_to_sync = self.filtered(
                     lambda inv: inv.move_type == 'out_invoice'
                     and inv.state == 'posted'
+                    and inv.netsuite_sync_status not in ['synced', 'queued']
                 )
 
                 if invoices_to_sync:

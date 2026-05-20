@@ -331,9 +331,9 @@ class PosOrder(models.Model):
         """Override create to trigger auto-sync on creation"""
         order = super(PosOrder, self).create(vals)
 
-        # Check if realtime sync is enabled
+        # Realtime mode: sync immediately when order is confirmed
         config = self.env['netsuite.config'].search([('active', '=', True)], limit=1)
-        if config and config.config_integration_mode == 'realtime' and config.config_sync_on_order_confirmed and order.state in ['paid', 'done', 'invoiced']:
+        if config and config.config_integration_mode == 'realtime' and order.state in ['paid', 'done', 'invoiced']:
             order._auto_sync_to_netsuite()
 
         return order
@@ -342,10 +342,10 @@ class PosOrder(models.Model):
         """Override write to trigger auto-sync on state change"""
         result = super(PosOrder, self).write(vals)
 
-        # Check if state changed to paid/done and realtime sync is enabled
+        # Realtime mode: sync immediately when order state changes to confirmed
         if 'state' in vals and vals.get('state') in ['paid', 'done', 'invoiced']:
             config = self.env['netsuite.config'].search([('active', '=', True)], limit=1)
-            if config and config.config_integration_mode == 'realtime' and config.config_sync_on_order_confirmed:
+            if config and config.config_integration_mode == 'realtime':
                 self._auto_sync_to_netsuite()
 
         return result

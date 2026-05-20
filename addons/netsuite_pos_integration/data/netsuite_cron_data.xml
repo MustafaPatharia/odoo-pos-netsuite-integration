@@ -39,10 +39,10 @@
         <!-- PRODUCTION VERSION (Commented for testing) -->
         <!--
         <record id="ir_cron_netsuite_order_sync" model="ir.cron">
-            <field name="name">NetSuite: Sync Consolidated Orders Daily</field>
-            <field name="model_id" ref="model_netsuite_consolidated_sync"/>
+            <field name="name">NetSuite: Sync Orders Daily</field>
+            <field name="model_id" ref="model_netsuite_orders_sync"/>
             <field name="state">code</field>
-            <field name="code">model.sync_consolidated_orders(sync_all_dates=False, sync_mode='scheduled')</field>
+            <field name="code">model.sync_orders(sync_all_dates=False, sync_mode='scheduled')</field>
             <field name="interval_number">1</field>
             <field name="interval_type">days</field>
             <field name="numbercall">-1</field>
@@ -54,10 +54,10 @@
 
         <!-- TESTING VERSION (Every 1 minute) -->
         <record id="ir_cron_netsuite_order_sync" model="ir.cron">
-            <field name="name">NetSuite: Sync Consolidated Orders Every 1min (TESTING)</field>
-            <field name="model_id" ref="model_netsuite_consolidated_sync"/>
+            <field name="name">NetSuite: Sync Orders Every 1min (TESTING)</field>
+            <field name="model_id" ref="model_netsuite_orders_sync"/>
             <field name="state">code</field>
-            <field name="code">model.sync_consolidated_orders(sync_all_dates=False, sync_mode='scheduled')</field>
+            <field name="code">model.sync_orders(sync_all_dates=False, sync_mode='scheduled')</field>
             <field name="interval_number">1</field>
             <field name="interval_type">minutes</field>
             <field name="numbercall">-1</field>
@@ -71,10 +71,10 @@
         <!-- PRODUCTION VERSION (Commented for testing) -->
         <!--
         <record id="ir_cron_netsuite_invoice_sync" model="ir.cron">
-            <field name="name">NetSuite: Sync Consolidated Invoices Daily</field>
-            <field name="model_id" ref="model_netsuite_consolidated_sync"/>
+            <field name="name">NetSuite: Sync Invoices Daily</field>
+            <field name="model_id" ref="model_netsuite_invoices_sync"/>
             <field name="state">code</field>
-            <field name="code">model.sync_consolidated_invoices(sync_mode='scheduled')</field>
+            <field name="code">model.sync_invoices(sync_mode='scheduled')</field>
             <field name="interval_number">1</field>
             <field name="interval_type">days</field>
             <field name="numbercall">-1</field>
@@ -86,10 +86,10 @@
 
         <!-- TESTING VERSION (Every 1 minute) -->
         <record id="ir_cron_netsuite_invoice_sync" model="ir.cron">
-            <field name="name">NetSuite: Sync Consolidated Invoices Every 1min (TESTING)</field>
-            <field name="model_id" ref="model_netsuite_consolidated_sync"/>
+            <field name="name">NetSuite: Sync Invoices Every 1min (TESTING)</field>
+            <field name="model_id" ref="model_netsuite_invoices_sync"/>
             <field name="state">code</field>
-            <field name="code">model.sync_consolidated_invoices(sync_mode='scheduled')</field>
+            <field name="code">model.sync_invoices(sync_mode='scheduled')</field>
             <field name="interval_number">1</field>
             <field name="interval_type">minutes</field>
             <field name="numbercall">-1</field>

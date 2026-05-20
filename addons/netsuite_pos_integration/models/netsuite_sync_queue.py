@@ -33,6 +33,7 @@ class NetSuiteSyncQueue(models.Model):
 
     record_type = fields.Selection([
         ('sales_order', 'Sales Order'),
+        ('invoice', 'Invoice'),
         ('customer', 'Customer'),
         ('payment', 'Payment'),
     ], string='Record Type', required=True)
