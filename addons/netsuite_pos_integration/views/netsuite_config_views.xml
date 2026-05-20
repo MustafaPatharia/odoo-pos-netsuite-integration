@@ -27,16 +27,34 @@
                         <page string="Credentials" name="credentials">
                             <group>
                                 <group string="API Settings">
-                                    <field name="api_url" placeholder="http://localhost:3000"/>
-                                    <field name="account_id" placeholder="TSTDRV123456"/>
+                                    <field name="use_mock_server" widget="boolean_toggle"/>
+                                    <field name="account_id" placeholder="TSTDRV123456"
+                                           invisible="use_mock_server"/>
+                                    <field name="api_url" readonly="1"/>
+                                    <field name="api_url_override" placeholder="Leave empty for auto-generation"
+                                           invisible="use_mock_server"/>
                                 </group>
-                                <group string="OAuth Credentials">
+                                <group string="OAuth Credentials" invisible="use_mock_server">
                                     <field name="consumer_key" password="True" placeholder="Consumer Key"/>
                                     <field name="consumer_secret" password="True" placeholder="Consumer Secret"/>
                                     <field name="token_id" password="True" placeholder="Token ID"/>
                                     <field name="token_secret" password="True" placeholder="Token Secret"/>
                                 </group>
                             </group>
+
+                            <div class="alert alert-info" role="alert" invisible="not use_mock_server">
+                                <strong>🧪 Mock Server Mode</strong>
+                                <p style="margin-top: 5px; margin-bottom: 0;">
+                                    Using local mock server for testing. API URL is set to: <code>http://host.docker.internal:3000</code>
+                                </p>
+                            </div>
+
+                            <div class="alert alert-success" role="alert" invisible="use_mock_server">
+                                <strong>🔒 Production Mode</strong>
+                                <p style="margin-top: 5px; margin-bottom: 0;">
+                                    API URL auto-generated from Account ID. OAuth credentials required.
+                                </p>
+                            </div>
                         </page>
 
                         <page string="NetSuite Configuration" name="netsuite_config">

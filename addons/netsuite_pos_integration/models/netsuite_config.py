@@ -45,15 +45,28 @@ class NetSuiteConfig(models.Model):
     # CREDENTIALS ONLY - Nothing else stored here
     # ============================================
 
-    api_url = fields.Char(
-        string='API URL',
-        default='http://host.docker.internal:3000',
-        help='NetSuite base URL'
+    use_mock_server = fields.Boolean(
+        string='Use Mock Server (Testing)',
+        default=True,
+        help='Enable for local testing with mock server. Disable for production NetSuite.'
     )
 
     account_id = fields.Char(
         string='Account ID',
-        help='NetSuite Account ID'
+        help='NetSuite Account ID (e.g., TSTDRV2324611 or 1234567)'
+    )
+
+    api_url = fields.Char(
+        string='API URL',
+        compute='_compute_api_url',
+        inverse='_inverse_api_url',
+        store=True,
+        help='Auto-generated from Account ID. Can be manually overridden if needed.'
+    )
+
+    api_url_override = fields.Char(
+        string='Manual API URL Override',
+        help='Leave empty to auto-generate from Account ID'
     )
 
     consumer_key = fields.Char(
@@ -227,6 +240,35 @@ class NetSuiteConfig(models.Model):
     # ============================================
     # Methods
     # ============================================
+
+    @api.depends('account_id', 'use_mock_server', 'api_url_override')
+    def _compute_api_url(self):
+        """Auto-generate API URL from Account ID"""
+        for record in self:
+            # If manual override is set, use it
+            if record.api_url_override:
+                record.api_url = record.api_url_override
+            # If mock server mode, use localhost
+            elif record.use_mock_server:
+                record.api_url = 'http://host.docker.internal:3000'
+            # Otherwise, generate from Account ID
+            elif record.account_id:
+                # Convert account ID to lowercase for URL
+                account_id_lower = record.account_id.lower()
+                record.api_url = f'https://{account_id_lower}.suitetalk.api.netsuite.com'
+            else:
+                # Fallback to mock server if no account ID
+                record.api_url = 'http://host.docker.internal:3000'
+
+    def _inverse_api_url(self):
+        """Allow manual override of API URL"""
+        for record in self:
+            # If user manually changes API URL, store it as override
+            if record.api_url:
+                # Check if it's different from auto-generated value
+                auto_url = 'http://host.docker.internal:3000' if record.use_mock_server else f'https://{record.account_id.lower()}.suitetalk.api.netsuite.com' if record.account_id else ''
+                if record.api_url != auto_url:
+                    record.api_url_override = record.api_url
 
     @api.depends('netsuite_config')
     def _compute_netsuite_config_fields(self):

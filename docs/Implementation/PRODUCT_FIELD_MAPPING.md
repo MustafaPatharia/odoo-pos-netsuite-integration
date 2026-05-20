@@ -1,54 +1,45 @@
 # NetSuite → Odoo Product Field Mapping
 
+**Status**: Future Enhancement Request
 **Date**: May 17, 2026
-**For**: NetSuite Development Team
 
 ---
 
-## ✅ Currently Mapped Fields
+## ✅ Currently Implemented Fields
 
-| NetSuite Field | Odoo Field | Status |
+| NetSuite Field | Odoo Field | Type | Description |
+|---|---|---|---|
+| `id` | `x_netsuite_id` | String | NetSuite internal ID (unique) |
+| `itemid` | `default_code` | String | Item SKU/Reference |
+| `displayname` | `name` | String | Product name |
+| `description` | `description` | Text | Product description |
+| `baseprice` | `list_price` | Float | Sales price |
+| `cost` | `standard_price` | Float | Cost price |
+| `isinactive` | `active` | Boolean | Active status (inverted) |
+| `quantityavailable` | Stock level | Float | Available quantity (updates stock) |
+
+**Note**: Product sync currently handles these 8 fields. The integration is fully functional with this basic field set.
+
+---
+
+## 🔮 Potential Future Enhancements
+
+The following fields are NOT currently implemented but could be added in future versions:
+
+| NetSuite Field | Purpose | Priority |
 |---|---|---|
-| `id` | `x_netsuite_id` | ✅ Mapped |
-| `itemid` | `default_code` | ✅ Mapped |
-| `displayname` | `name` | ✅ Mapped |
-| `description` | `description` | ✅ Mapped |
-| `baseprice` | `list_price` | ✅ Mapped |
-| `cost` | `standard_price` | ✅ Mapped |
-| `isinactive` | `active` | ✅ Mapped |
+| `category` | Product categorization | Medium |
+| `uom` | Unit of measure | Low |
+| `barcode` | POS scanning | Medium |
+| `itemtype` | Product type (inventory/service) | Low |
+| `imageurl` | Product images | Low |
+| `weight` | Shipping calculations | Low |
+| `volume` | Shipping calculations | Low |
 
 ---
 
-## 🔴 Additional Fields Needed from NetSuite
+## Current NetSuite API Response
 
-| NetSuite Field | Required/Optional | Description |
-|---|---|---|
-| `category` | Required | Product category name or ID for grouping items in Odoo |
-| `uom` | Required | Unit of measure code (EA=Each, BOX=Box, KG=Kilogram, etc.) |
-| `barcode` | Optional | Product UPC/EAN barcode for scanning |
-| `itemtype` | Optional | Item type: InvtPart (inventory), Service, or NonInvtPart |
-| `imageurl` | Optional | URL to product image (will be downloaded and stored in Odoo) |
-| `weight` | Optional | Item weight in kilograms (for shipping calculations) |
-| `volume` | Optional | Item volume in cubic meters (for shipping calculations) |
-
----
-
-## 📄 Expected NetSuite Payload
-
-### Current (Minimum)
-```json
-{
-  "id": "1001",
-  "itemid": "ITEM-001",
-  "displayname": "Coffee - Espresso",
-  "description": "Premium espresso blend",
-  "baseprice": 3.50,
-  "cost": 1.20,
-  "isinactive": false
-}
-```
-
-### Requested (Complete)
 ```json
 {
   "id": "1001",
@@ -58,26 +49,8 @@
   "baseprice": 3.50,
   "cost": 1.20,
   "isinactive": false,
-  "category": "Beverages",
-  "uom": "EA",
-  "barcode": "1234567890123",
-  "itemtype": "InvtPart",
-  "imageurl": "https://example.com/images/item-001.jpg",
-  "weight": 0.5,
-  "volume": 0.001
+  "quantityavailable": 50.0
 }
 ```
 
----
-
-## 📝 Notes
-
-- **category**: If not provided, all products default to "All" category
-- **uom**: If not provided, defaults to "Units"
-- **barcode**: Should be unique across all products
-- **itemtype**: Maps to Odoo product type (InvtPart→Storable, Service→Service, NonInvtPart→Consumable)
-- **weight/volume**: Used for shipping cost calculations
-
----
-
-**Contact**: Odoo Integration Team
+This minimal payload is sufficient for current operations.

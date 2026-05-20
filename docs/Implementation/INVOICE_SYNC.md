@@ -1,162 +1,99 @@
-# EOD Invoice Sync - Odoo to NetSuite
+# Invoice Sync - Odoo to NetSuite
 
 ## Overview
 
-The End-of-Day (EOD) Invoice Sync feature consolidates POS invoices and creates **separate invoices per payment method per shop per day** in NetSuite.
+Syncs POS invoices to NetSuite with **payment method separation** and **split-payment handling**.
 
 **Key Features:**
-- **Payment Method Separation** - Cash and Credit invoices are separate
-- **Split-Payment Handling** - Orders with multiple payments are divided proportionally
-- **Customer Entity Mapping** - Different customers for Cash vs Credit
-- **Mode-Based Consolidation** - Real-time mode disables consolidation
+- Separate invoices for each payment method (Cash, Credit, etc.)
+- Proportional splitting for orders with multiple payments
+- Different customer entities per payment type
+- Configurable consolidation (can be enabled/disabled)
 
 **Sync Methods:**
-- **Manual Sync** - Sync invoices for a specific date on-demand
-- **Automatic Sync** - Runs daily at midnight (00:10)
+- **Manual**: Trigger from Odoo UI anytime
+- **Automatic**: Daily at 00:10 AM (scheduled mode only)
 
 ---
 
-## 🔄 Split-Payment Handling
+## Split-Payment Example
 
-### The Problem
+**Scenario**: Customer pays 60 AED cash + 40 AED credit card for 100 AED order
 
-**Scenario:** A customer buys 100 AED of items but has only 60 AED cash, so pays 40 AED by credit card.
-
-**Challenge:** How to create separate Cash and Credit invoices in NetSuite without losing data?
-
-### The Solution
-
-**Proportional Splitting** - Each invoice gets its proportional share of line items.
-
-**Example:**
-
-**Odoo POS Order:**
+**Odoo Order:**
 ```
-Order #100: Total 100 AED
-  Products:
-    - Product A: 10 qty @ 5 AED = 50 AED
-    - Product B: 5 qty @ 10 AED = 50 AED
-
-  Payments:
-    - Cash: 60 AED (60%)
-    - Credit Card: 40 AED (40%)
+Products:
+  - Product A: 10 qty @ 5 AED = 50 AED
+  - Product B: 5 qty @ 10 AED = 50 AED
+Payments:
+  - Cash: 60 AED (60%)
+  - Credit: 40 AED (40%)
 ```
 
-**NetSuite Invoices Created:**
+**NetSuite Invoices:**
 
-**Cash Invoice (Customer: Cash Customer):**
-```
-- Product A: 6.0 qty @ 5 AED = 30 AED  (60% of 10 qty)
-- Product B: 3.0 qty @ 10 AED = 30 AED  (60% of 5 qty)
-Total: 60 AED ✓
-```
+Cash Invoice (60%):
+- Product A: 6.0 qty @ 5 AED = 30 AED
+- Product B: 3.0 qty @ 10 AED = 30 AED
+- **Total: 60 AED**
 
-**Credit Card Invoice (Customer: Credit Customer):**
-```
-- Product A: 4.0 qty @ 5 AED = 20 AED  (40% of 10 qty)
-- Product B: 2.0 qty @ 10 AED = 20 AED  (40% of 5 qty)
-Total: 40 AED ✓
-```
+Credit Invoice (40%):
+- Product A: 4.0 qty @ 5 AED = 20 AED
+- Product B: 2.0 qty @ 10 AED = 20 AED
+- **Total: 40 AED**
 
-**Result:** No data loss, perfect reconciliation! 🎉
+**Result**: Perfect reconciliation with no data loss.
 
 ---
 
-## Manual EOD Invoice Sync
+## Manual Sync
 
-### How to Trigger Manual Sync
+**Steps:**
+1. Go to **NetSuite → Operations → Sync Invoices**
+2. Click **"Sync Invoices"**
+3. System syncs yesterday's invoices by default
 
-1. Navigate to: **NetSuite → Operations → Sync Invoices**
-
-2. Click the **"Sync Invoices"** button
-
-3. Odoo will:
-   - Find all paid/invoiced orders for yesterday (default)
-   - Group by shop
-   - Create one consolidated Invoice per shop
-   - Display results notification
-
-### What Happens During Sync
-
-1. **Validate** all products have NetSuite IDs
-2. **Fetch** all invoices for target date with status: `paid`, `done`, or `invoiced`
-3. **Calculate** payment proportions for each invoice (handles split payments)
-4. **Group** invoices by **(warehouse, payment_method)** combination
-5. **Aggregate** line items proportionally by product
-6. **Create** ONE Invoice in NetSuite per **(warehouse, payment_method)** group
-7. **Update** Odoo invoices with NetSuite invoice ID
-8. **Log** sync results
-
-**Example:**
-```
-Shop: Main Store
-Date: 2026-05-16
-Orders: 8 POS orders (5 cash-only, 2 card-only, 1 split payment)
-
-Result: 2 Invoices Created
-  - Cash Invoice (INV-001): 150.00 AED
-  - Card Invoice (INV-002): 280.45 AED
-```
+**Process:**
+1. Validates all products have NetSuite IDs
+2. Fetches unsynced invoices for target date
+3. Calculates payment proportions (for split payments)
+4. Groups by (warehouse, payment_method)
+5. Aggregates line items proportionally
+6. Creates NetSuite invoices
+7. Updates Odoo with NetSuite IDs
+8. Logs results
 
 ---
 
-## Automatic Daily Sync
-
-### Configuration
-
-The daily sync runs automatically at midnight, shortly after order sync.
+## Automatic Sync
 
 **Schedule:** Daily at 00:10 AM
-**Cron Job Name:** `NetSuite: Sync EOD Invoices`
-**Mode:** Syncs only yesterday's invoices
+**Condition:** Only in `scheduled` integration mode
+**Target:** Yesterday's invoices only
 
-### Sync Sequence
-
+**Timing:**
 ```
-00:05 → Order Sync runs (creates Sales Orders)
-        ↓
-00:10 → Invoice Sync runs (creates Invoices)
+00:05 → Orders sync
+00:10 → Invoices sync (ensures orders created first)
 ```
-
-**Why separate timing?**
-- Ensures Sales Orders are created first
-- Maintains proper NetSuite workflow
-- 5-minute buffer for order sync completion
-
-### How It Works
-
-1. **Trigger:** Runs at 00:10 every day
-2. **Target Date:** Yesterday (previous day)
-3. **Action:** Creates consolidated Invoices for yesterday only
-4. **Condition:** Only runs if `config_integration_mode == 'scheduled'`
 
 ---
 
-## Consolidated Invoice Structure
+## Grouping Logic
 
-### Grouping Logic
+Invoices are grouped by:
+1. **Warehouse** - Each shop separate
+2. **Payment Method** - Each payment type separate
+3. **Date** - Per day
 
-**Invoices are grouped by:**
-1. **Warehouse/Shop** - Each shop gets separate invoices
-2. **Payment Method** - Each payment method gets a separate invoice
-3. **Date** - Invoices are created per day
-
-**Result:** One invoice per **(warehouse, payment_method, date)** combination
+**Result:** One invoice per (warehouse, payment_method, date) combination
 
 **Example:**
 ```
 Shop A on May 20:
-  - Cash Invoice → Customer: Cash Customer
-  - Credit Card Invoice → Customer: Credit Customer
+  ├─ Cash Invoice → Customer: Cash Customer
+  └─ Credit Invoice → Customer: Credit Customer
 ```
-
-### Split-Payment Handling
-
-**When a single order has multiple payment methods** (e.g., 60 AED cash + 40 AED card):
-- Order is **split proportionally** across payment invoices
-- Cash invoice gets 60% of line items
-- Card invoice gets 40% of line items
-- No data loss - all payments tracked correctly
 
 ### NetSuite Invoice Fields
 
@@ -210,157 +147,83 @@ Card Invoice (40%):
 | Payment Method | NetSuite Customer Entity |
 |----------------|-------------------------|
 | Cash | Customer ID 1 (Cash Customer) |
-| Credit Card | Customer ID 2 (Credit Customer) |
-| Mobile/Other | Customer ID 3 (Mobile Customer) |
+---
 
-**Why?** Client requirement - reconciliation reports need to distinguish between cash and credit transactions.
+## NetSuite Invoice Fields
 
-**Configurable:** Customer mapping can be configured in `netsuite_config` (future enhancement).
+| Field | Value | Source |
+|---|---|---|
+| `entity` | Customer ID (1=Cash, 2=Credit, 3=Mobile) | Payment-specific |
+| `subsidiary` | NetSuite subsidiary ID | Warehouse mapping |
+| `department` | NetSuite department ID | Warehouse mapping |
+| `location` | NetSuite location ID | Warehouse mapping |
+| `tranDate` | Invoice date (YYYY-MM-DD) | Order date |
+| `paymentMethod` | NetSuite payment method ID | Payment mapping |
+| `memo` | "Invoice - [Shop] - [Date]" | Auto-generated |
+| `custbody_odoo_invoice_ids` | Array of invoice IDs | Tracking |
+| `custbody_odoo_invoice_count` | Count | Tracking |
+| `custbody_payment_type` | Payment method ID | Tracking |
+| `items[]` | Aggregated line items | Proportional calc |
+
+**Line Item Calculation:**
+```javascript
+quantity = sum of (original_qty × proportion)
+amount = sum of (original_amount × proportion)
+rate = amount ÷ quantity
+```
 
 ---
 
 ## Prerequisites
 
-### 1. Products Must Have NetSuite IDs
+1. **Products with NetSuite IDs** - Sync products first or add manually
+2. **Warehouse Mapping** - Configure subsidiary/department/location mappings
+3. **Payment Method Mapping** (optional) - Maps Odoo → NetSuite payment methods
 
-Same requirement as Order Sync - all products need NetSuite IDs.
-
-**Error if missing:**
-```
-Cannot sync invoices: 1 product(s) missing NetSuite IDs:
-
-   • Corner Desk Left Sit (FURN_1118)
-
-Please add NetSuite ID manually:
-Inventory → Products → Edit → Set 'NetSuite ID' field
-```
-
-### 2. Warehouse Subsidiary Mapping
-
-Same as Order Sync - warehouses must be mapped.
-
-### 3. Payment Method Mapping
-
-Payment methods should be mapped to NetSuite payment method IDs.
-
-**Configure at:** NetSuite → Configurations → Payment Method Mapping
-*(Optional - if not mapped, payment method name is used)*
+**Configure at:** NetSuite → Configurations
 
 ---
 
-## Invoice Status Tracking
+## Sync Status Tracking
 
-### Odoo POS Order Fields
+**Fields on POS Order:**
+- `x_netsuite_invoice_id` - NetSuite invoice ID
+- `x_netsuite_invoice_sync_date` - Sync timestamp
 
-| Field | Description | Values |
-|---|---|---|
-| `x_netsuite_invoice_id` | NetSuite Invoice ID | e.g., "36063" |
-| `x_netsuite_invoice_sync_date` | Timestamp of invoice sync | DateTime |
+**Separate from Order Sync:**
+- Order sync: `netsuite_id`, `netsuite_tran_id` (Sales Order)
+- Invoice sync: `x_netsuite_invoice_id` (Invoice)
 
-**Note:** Invoice sync updates different fields than Order sync to track both separately.
-
-### Dual Tracking
-
-Each POS order tracks both:
-- **Sales Order** → `netsuite_id`, `netsuite_tran_id`
-- **Invoice** → `x_netsuite_invoice_id`, `x_netsuite_invoice_sync_date`
-
-```
-POS Order
-    ↓
-Order Sync → netsuite_id = "31943", netsuite_tran_id = "SO-578238"
-    ↓
-Invoice Sync → x_netsuite_invoice_id = "36063"
-```
+Both can be tracked independently.
 
 ---
 
 ## Sync Logs
 
-All invoice sync operations are logged separately from order sync.
+**View:** NetSuite → Sync → Logs
+**Filter:** Record Type = `eod_invoice`
 
-### Viewing Sync Logs
-
-Navigate to: **NetSuite → Sync → Logs**
-
-Filter by:
-- **Record Type:** EOD Invoice
-- **Status:** Success / Failed / Partial
-- **Date:** Today / This Week / Custom Range
-
-### Log Details
-
-Each log entry contains:
-- **Reference:** Sync timestamp with "(+00:00)" timezone
-- **Record Type:** `eod_invoice`
-- **Status:** `success`, `failed`, or `partial`
-- **Request URL:** NetSuite invoice creation endpoint
-- **Request Method:** `POST`
-- **Response Code:** HTTP status (200 = success)
-- **Execution Time:** Milliseconds
-- **Response Payload:** Full sync results including invoice IDs
-- **Notes:** Summary (e.g., "Shops: 2/3, Orders: 18, Failed: 1")
-
----
-
-## Integration Mode Behavior
-
-**The consolidation logic depends on the integration mode:**
-
-| Mode | Consolidation | Behavior |
-|------|---------------|----------|
-| **Real-time** | ❌ Disabled | 1:1 order to invoice mapping (no consolidation) |
-| **Scheduled** | ✅ Enabled | Consolidated invoices (grouped by warehouse + payment + date) |
-| **Manual** | ✅ Enabled | Consolidated invoices (grouped by warehouse + payment + date) |
-
-**Why?** Client requirement - real-time mode for immediate sync, scheduled/manual for batch processing.
-
-## Differences from Order Sync
-
-| Aspect | Order Sync | Invoice Sync |
-|---|---|---|
-| **NetSuite Record** | Sales Order | Invoice |
-| **Grouping** | By shop + date | By shop + payment + date |
-| **Customer Entity** | Default customer | Payment-specific customer |
-| **Includes Payments** | No | Yes (via customer + payment method field) |
-| **Split Payments** | First payment only | Proportional splitting |
-| **Cron Time** | 00:05 | 00:10 |
-| **Sync Mode** | All unsynced dates (manual) | Specific date only |
-| **Fields Updated** | `netsuite_id`, `netsuite_tran_id` | `netsuite_id`, `netsuite_tran_id`, `netsuite_sync_status` |
-| **Record Type Log** | `eod_order` | `eod_invoice` |
+**Key Fields:**
+- Status: success/failed/partial
+- Response Code: HTTP status
+- Execution Time: milliseconds
+- Notes: Summary (shops synced, orders processed, failures)
 
 ---
 
 ## Troubleshooting
 
-### Error: "Products missing NetSuite IDs"
+**Products missing NetSuite IDs:**
+→ Sync products first or add IDs manually
 
-**Same solution as Order Sync:**
-1. Add NetSuite IDs to products manually
-2. Or sync products from NetSuite first
+**No subsidiary mapping:**
+→ Configure warehouse mappings (NetSuite → Configurations)
 
-### Error: "No NetSuite subsidiary mapping found"
+**Invoice sync failed, order sync succeeded:**
+→ Check invoice sync log, fix issue, retry manually
 
-**Same solution as Order Sync:**
-1. Configure subsidiary mappings for warehouses
-
-### Invoice Sync Failed but Order Sync Succeeded
-
-**Cause:** Invoice sync runs separately - can fail independently.
-
-**Solution:**
-1. Check invoice sync log for specific error
-2. Fix the issue (e.g., payment method mapping)
-3. Retry invoice sync manually
-4. Order sync data is preserved
-
-### Payment Method Not Found
-
-**Cause:** Payment method mapping missing in NetSuite.
-
-**Solution:**
-1. Go to: NetSuite → Configurations → Payment Method Mapping
-2. Create mapping for Odoo payment method → NetSuite payment method
+**Payment method not found:**
+→ Add payment method mapping (NetSuite → Configurations)
 3. Or use generic payment method ID
 4. Retry sync
 
