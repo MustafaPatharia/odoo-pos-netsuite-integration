@@ -45,7 +45,7 @@ else:
     </record>
 
     <!-- ========================================== -->
-    <!-- EOD Order Summary Action -->
+    <!-- Sync Orders Action -->
     <!-- ========================================== -->
     <record id="action_netsuite_eod_order_summary" model="ir.actions.server">
         <field name="name">Sync EOD Orders</field>
@@ -53,58 +53,78 @@ else:
         <field name="state">code</field>
         <field name="code">
 # Sync consolidated orders from yesterday to NetSuite
-# This creates ONE consolidated Sales Order per shop per day
+# This creates ONE consolidated Sales Order per shop per day (if consolidation enabled)
+# OR sends each order individually (if consolidation disabled)
 
-try:
-    result = env['netsuite.consolidated.sync'].sync_consolidated_orders()
-
-    if result.get('success'):
-        message = 'Successfully synced consolidated orders!\n\n'
-        message += f"Synced: {result.get('synced', 0)}/{result.get('total_combinations', 0)} (shop+date)\n"
-        message += f"Total orders: {result.get('total_orders', 0)}"
-
-        action = {
-            'type': 'ir.actions.client',
-            'tag': 'display_notification',
-            'params': {
-                'title': '✅ EOD Order Sync Complete',
-                'message': message,
-                'type': 'success',
-                'sticky': False,
-            }
-        }
-    else:
-        error_details = '\n'.join(result.get('errors', []))
-        message = f"Synced: {result.get('synced', 0)}/{result.get('total_combinations', 0)}\n"
-        message += f"Failed: {result.get('failed', 0)}\n\n"
-        message += f"Errors:\n{error_details}"
-
-        action = {
-            'type': 'ir.actions.client',
-            'tag': 'display_notification',
-            'params': {
-                'title': '⚠️ EOD Order Sync Partial Failure',
-                'message': message,
-                'type': 'warning',
-                'sticky': True,
-            }
-        }
-except Exception as e:
+# Check if manual execution is enabled
+config = env['netsuite.config'].get_active_config()
+if not config or not config.config_manual_execution_enabled:
     action = {
         'type': 'ir.actions.client',
         'tag': 'display_notification',
         'params': {
-            'title': '❌ EOD Order Sync Failed',
-            'message': str(e),
-            'type': 'danger',
+            'title': '🚫 Manual Execution Disabled',
+            'message': 'Manual sync is not enabled in NetSuite configuration. Please update the configuration to enable manual execution.',
+            'type': 'warning',
             'sticky': True,
         }
     }
+else:
+    try:
+        result = env['netsuite.consolidated.sync'].sync_consolidated_orders()
+
+        if result.get('success'):
+            # Determine actual sync mode used
+            is_realtime = config.config_integration_mode == 'realtime'
+            sync_mode_label = 'Individual (1:1 - Realtime Fallback)' if is_realtime else ('Consolidated (N:1)' if config.config_consolidate_orders else 'Individual (1:1)')
+            
+            message = 'Successfully synced orders!\n\n'
+            message += f"Synced: {result.get('synced', 0)}/{result.get('total_combinations', 0)}\n"
+            message += f"Total orders: {result.get('total_orders', 0)}\n"
+            message += f"Mode: {sync_mode_label}"
+
+            action = {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': '✅ EOD Order Sync Complete',
+                    'message': message,
+                    'type': 'success',
+                    'sticky': False,
+                }
+            }
+        else:
+            error_details = '\n'.join(result.get('errors', []))
+            message = f"Synced: {result.get('synced', 0)}/{result.get('total_combinations', 0)}\n"
+            message += f"Failed: {result.get('failed', 0)}\n\n"
+            message += f"Errors:\n{error_details}"
+
+            action = {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': '⚠️ EOD Order Sync Partial Failure',
+                    'message': message,
+                    'type': 'warning',
+                    'sticky': True,
+                }
+            }
+    except Exception as e:
+        action = {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': '❌ EOD Order Sync Failed',
+                'message': str(e),
+                'type': 'danger',
+                'sticky': True,
+            }
+        }
         </field>
     </record>
 
     <!-- ========================================== -->
-    <!-- EOD Invoice Summary Action -->
+    <!-- Sync Invoices Action -->
     <!-- ========================================== -->
     <record id="action_netsuite_eod_invoice_summary" model="ir.actions.server">
         <field name="name">Sync EOD Invoices</field>
@@ -112,53 +132,73 @@ except Exception as e:
         <field name="state">code</field>
         <field name="code">
 # Sync consolidated invoices from yesterday to NetSuite
-# This creates ONE consolidated Invoice per shop per day
+# This creates ONE consolidated Invoice per shop+payment per day (if consolidation enabled)
+# OR sends each invoice individually (if consolidation disabled)
 
-try:
-    result = env['netsuite.consolidated.sync'].sync_consolidated_invoices()
-
-    if result.get('success'):
-        message = 'Successfully synced consolidated invoices!\n\n'
-        message += f"Shops synced: {result.get('synced', 0)}/{result.get('total_shops', 0)}\n"
-        message += f"Total orders included: {result.get('total_orders', 0)}"
-
-        action = {
-            'type': 'ir.actions.client',
-            'tag': 'display_notification',
-            'params': {
-                'title': '✅ EOD Invoice Sync Complete',
-                'message': message,
-                'type': 'success',
-                'sticky': False,
-            }
-        }
-    else:
-        error_details = '\n'.join(result.get('errors', []))
-        message = f"Synced: {result.get('synced', 0)}/{result.get('total_shops', 0)} shops\n"
-        message += f"Failed: {result.get('failed', 0)} shops\n\n"
-        message += f"Errors:\n{error_details}"
-
-        action = {
-            'type': 'ir.actions.client',
-            'tag': 'display_notification',
-            'params': {
-                'title': '⚠️ EOD Invoice Sync Partial Failure',
-                'message': message,
-                'type': 'warning',
-                'sticky': True,
-            }
-        }
-except Exception as e:
+# Check if manual execution is enabled
+config = env['netsuite.config'].get_active_config()
+if not config or not config.config_manual_execution_enabled:
     action = {
         'type': 'ir.actions.client',
         'tag': 'display_notification',
         'params': {
-            'title': '❌ EOD Invoice Sync Failed',
-            'message': str(e),
-            'type': 'danger',
+            'title': '🚫 Manual Execution Disabled',
+            'message': 'Manual sync is not enabled in NetSuite configuration. Please update the configuration to enable manual execution.',
+            'type': 'warning',
             'sticky': True,
         }
     }
+else:
+    try:
+        result = env['netsuite.consolidated.sync'].sync_consolidated_invoices()
+
+        if result.get('success'):
+            # Determine actual sync mode used
+            is_realtime = config.config_integration_mode == 'realtime'
+            sync_mode_label = 'Individual (1:1 - Realtime Fallback)' if is_realtime else ('Consolidated (N:1)' if config.config_consolidate_invoices else 'Individual (1:1)')
+            
+            message = 'Successfully synced invoices!\n\n'
+            message += f"Groups synced: {result.get('synced', 0)}/{result.get('total_groups', 0)}\n"
+            message += f"Total invoices: {result.get('total_invoices', 0)}\n"
+            message += f"Mode: {sync_mode_label}"
+
+            action = {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': '✅ EOD Invoice Sync Complete',
+                    'message': message,
+                    'type': 'success',
+                    'sticky': False,
+                }
+            }
+        else:
+            error_details = '\n'.join(result.get('errors', []))
+            message = f"Synced: {result.get('synced', 0)}/{result.get('total_groups', 0)} groups\n"
+            message += f"Failed: {result.get('failed', 0)}\n\n"
+            message += f"Errors:\n{error_details}"
+
+            action = {
+                'type': 'ir.actions.client',
+                'tag': 'display_notification',
+                'params': {
+                    'title': '⚠️ EOD Invoice Sync Partial Failure',
+                    'message': message,
+                    'type': 'warning',
+                    'sticky': True,
+                }
+            }
+    except Exception as e:
+        action = {
+            'type': 'ir.actions.client',
+            'tag': 'display_notification',
+            'params': {
+                'title': '❌ EOD Invoice Sync Failed',
+                'message': str(e),
+                'type': 'danger',
+                'sticky': True,
+            }
+        }
         </field>
     </record>
 

@@ -133,31 +133,6 @@ class NetSuiteConfig(models.Model):
         store=False
     )
 
-    # Scheduled Settings
-    config_hourly_sync_enabled = fields.Boolean(
-        string='Product Hourly Sync Enabled',
-        compute='_compute_netsuite_config_fields',
-        store=False
-    )
-
-    config_product_sync_frequency = fields.Char(
-        string='Product Sync Frequency',
-        compute='_compute_netsuite_config_fields',
-        store=False
-    )
-
-    config_order_sync_time = fields.Char(
-        string='Order Sync Time',
-        compute='_compute_netsuite_config_fields',
-        store=False
-    )
-
-    config_invoice_sync_time = fields.Char(
-        string='Invoice Sync Time',
-        compute='_compute_netsuite_config_fields',
-        store=False
-    )
-
     # Realtime Settings
     config_sync_on_order_confirmed = fields.Boolean(
         string='Sync on Order Confirmed',
@@ -180,12 +155,6 @@ class NetSuiteConfig(models.Model):
 
     config_allow_retry_failed = fields.Boolean(
         string='Allow Retry Failed',
-        compute='_compute_netsuite_config_fields',
-        store=False
-    )
-
-    config_product_batch_size = fields.Integer(
-        string='Product Batch Size',
         compute='_compute_netsuite_config_fields',
         store=False
     )
@@ -234,36 +203,25 @@ class NetSuiteConfig(models.Model):
         store=False
     )
 
-    # API Settings
-    config_connection_timeout = fields.Integer(
-        string='Connection Timeout (seconds)',
-        compute='_compute_netsuite_config_fields',
-        store=False
-    )
-
-    config_request_timeout = fields.Integer(
-        string='Request Timeout (seconds)',
-        compute='_compute_netsuite_config_fields',
-        store=False
-    )
-
-    config_api_rate_limit = fields.Integer(
-        string='API Rate Limit (per minute)',
-        compute='_compute_netsuite_config_fields',
-        store=False
-    )
-
     # Consolidation Rules
     config_consolidate_orders = fields.Boolean(
-        string='Consolidate Orders Per Shop Per Day',
+        string='Consolidate Orders',
         compute='_compute_netsuite_config_fields',
-        store=False
+        store=False,
+        help="When enabled: Consolidate orders (N:1 sync). "
+             "When disabled: Send orders individually (1:1 sync). "
+             "Note: Real-time mode always forces 1:1 sync (manual buttons work as fallback). "
+             "Scheduled/Manual modes respect this flag."
     )
 
     config_consolidate_invoices = fields.Boolean(
-        string='Consolidate Invoices Per Shop Per Day',
+        string='Consolidate Invoices',
         compute='_compute_netsuite_config_fields',
-        store=False
+        store=False,
+        help="When enabled: Consolidate invoices by payment method (N:1 sync). "
+             "When disabled: Send invoices individually (1:1 sync). "
+             "Note: Real-time mode always forces 1:1 sync (manual buttons work as fallback). "
+             "Scheduled/Manual modes respect this flag."
     )
 
     # ============================================
@@ -282,15 +240,10 @@ class NetSuiteConfig(models.Model):
                 'config_retry_delay': 5,
                 'config_use_exponential_backoff': True,
                 'config_backoff_multiplier': 2,
-                'config_hourly_sync_enabled': True,
-                'config_product_sync_frequency': 'hourly',
-                'config_order_sync_time': '00:00',
-                'config_invoice_sync_time': '00:00',
                 'config_sync_on_order_confirmed': False,
                 'config_sync_on_invoice_validated': False,
                 'config_manual_execution_enabled': True,
                 'config_allow_retry_failed': True,
-                'config_product_batch_size': 50,
                 'config_send_email_on_failure': False,
                 'config_send_email_on_success': False,
                 'config_notification_recipients': '',
@@ -298,9 +251,6 @@ class NetSuiteConfig(models.Model):
                 'config_log_retention_days': 90,
                 'config_log_request_payload': True,
                 'config_log_response_payload': True,
-                'config_connection_timeout': 30,
-                'config_request_timeout': 120,
-                'config_api_rate_limit': 60,
                 'config_consolidate_orders': True,
                 'config_consolidate_invoices': True,
             }
@@ -325,13 +275,6 @@ class NetSuiteConfig(models.Model):
                 record.config_use_exponential_backoff = retry_policy.get('use_exponential_backoff', defaults['config_use_exponential_backoff'])
                 record.config_backoff_multiplier = retry_policy.get('backoff_multiplier', defaults['config_backoff_multiplier'])
 
-                # Scheduled Settings
-                scheduled = config.get('scheduled_settings', {})
-                record.config_hourly_sync_enabled = scheduled.get('enabled', defaults['config_hourly_sync_enabled'])
-                record.config_product_sync_frequency = scheduled.get('product_sync_frequency', defaults['config_product_sync_frequency'])
-                record.config_order_sync_time = scheduled.get('order_sync_time', defaults['config_order_sync_time'])
-                record.config_invoice_sync_time = scheduled.get('invoice_sync_time', defaults['config_invoice_sync_time'])
-
                 # Realtime Settings
                 realtime = config.get('realtime_settings', {})
                 record.config_sync_on_order_confirmed = realtime.get('sync_on_order_confirmed', defaults['config_sync_on_order_confirmed'])
@@ -341,10 +284,6 @@ class NetSuiteConfig(models.Model):
                 manual = config.get('manual_execution', {})
                 record.config_manual_execution_enabled = manual.get('enabled', defaults['config_manual_execution_enabled'])
                 record.config_allow_retry_failed = manual.get('allow_retry_failed', defaults['config_allow_retry_failed'])
-
-                # Batch Processing (product only)
-                batch = config.get('batch_processing', {})
-                record.config_product_batch_size = batch.get('product_batch_size', defaults['config_product_batch_size'])
 
                 # Notifications
                 notification = config.get('notification', {})
@@ -360,22 +299,43 @@ class NetSuiteConfig(models.Model):
                 record.config_log_request_payload = logging_config.get('log_request_payload', defaults['config_log_request_payload'])
                 record.config_log_response_payload = logging_config.get('log_response_payload', defaults['config_log_response_payload'])
 
-                # API Settings
-                api_settings = config.get('api_settings', {})
-                record.config_connection_timeout = api_settings.get('connection_timeout_seconds', defaults['config_connection_timeout'])
-                record.config_request_timeout = api_settings.get('request_timeout_seconds', defaults['config_request_timeout'])
-                record.config_api_rate_limit = api_settings.get('api_rate_limit_per_minute', defaults['config_api_rate_limit'])
-
                 # Consolidation Rules
                 consolidation = config.get('consolidation_rules', {})
-                record.config_consolidate_orders = consolidation.get('consolidate_orders_per_shop_per_day', defaults['config_consolidate_orders'])
-                record.config_consolidate_invoices = consolidation.get('consolidate_invoices_per_shop_per_day', defaults['config_consolidate_invoices'])
+                record.config_consolidate_orders = consolidation.get('consolidate_orders', defaults['config_consolidate_orders'])
+                record.config_consolidate_invoices = consolidation.get('consolidate_invoices', defaults['config_consolidate_invoices'])
 
             except Exception as e:
                 _logger.error(f'Error parsing NetSuite config JSON: {str(e)}')
                 # Set all to defaults on error
                 for key, value in defaults.items():
                     setattr(record, key, value)
+
+    @api.constrains('netsuite_config')
+    def _check_realtime_consolidation_conflict(self):
+        """Validate that consolidation is disabled when in Real-Time mode"""
+        for record in self:
+            if not record.netsuite_config:
+                continue
+
+            # Real-time mode cannot have consolidation enabled
+            if record.config_integration_mode == 'realtime':
+                if record.config_consolidate_orders:
+                    raise ValidationError(
+                        'Invalid NetSuite Configuration:\n\n'
+                        'Real-Time integration mode does not support order consolidation.\n'
+                        'Please update the NetSuite configuration to set:\n'
+                        '  • consolidation_rules.consolidate_orders = false\n\n'
+                        'Or switch to Scheduled/Manual integration mode to enable consolidation.'
+                    )
+
+                if record.config_consolidate_invoices:
+                    raise ValidationError(
+                        'Invalid NetSuite Configuration:\n\n'
+                        'Real-Time integration mode does not support invoice consolidation.\n'
+                        'Please update the NetSuite configuration to set:\n'
+                        '  • consolidation_rules.consolidate_invoices = false\n\n'
+                        'Or switch to Scheduled/Manual integration mode to enable consolidation.'
+                    )
 
     def action_fetch_config(self):
         """Fetch configuration from NetSuite"""

@@ -52,20 +52,20 @@ class NetSuiteAPIClient(models.AbstractModel):
                     url,
                     headers=headers,
                     json=data,
-                    timeout=(config.config_connection_timeout or 30, config.config_request_timeout or 60)
+                    timeout=(30, 60)
                 )
             elif method == 'PUT':
                 response = requests.put(
                     url,
                     headers=headers,
                     json=data,
-                    timeout=(config.config_connection_timeout or 30, config.config_request_timeout or 60)
+                    timeout=(30, 60)
                 )
             elif method == 'GET':
                 response = requests.get(
                     url,
                     headers=headers,
-                    timeout=(config.config_connection_timeout or 30, config.config_request_timeout or 60)
+                    timeout=(30, 60)
                 )
             else:
                 raise UserError(_('Unsupported HTTP method: %s') % method)
@@ -140,7 +140,7 @@ class NetSuiteAPIClient(models.AbstractModel):
         # Log payloads based on configuration settings
         if config.config_log_request_payload or config.config_debug_logging:
             log_vals['request_payload'] = json.dumps(request_data, indent=2) if request_data else ''
-        
+
         if config.config_log_response_payload or config.config_debug_logging:
             log_vals['response_payload'] = json.dumps(response_data, indent=2) if response_data else ''
 
@@ -361,11 +361,6 @@ class NetSuiteAPIClient(models.AbstractModel):
 
         if not config or not config.netsuite_config:
             _logger.warning("NetSuite config not loaded, skipping hourly item sync")
-            return
-
-        # Check if hourly sync is enabled
-        if not config.config_hourly_sync_enabled:
-            _logger.info("Hourly item sync is disabled in NetSuite configuration")
             return
 
         _logger.info("Starting hourly item sync...")

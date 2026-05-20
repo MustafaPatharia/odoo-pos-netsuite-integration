@@ -170,9 +170,8 @@ class NetSuiteConfigAPI(http.Controller):
                 )
 
             config_data = payload.get('configuration')
-            metadata = payload.get('metadata', {})
 
-            _logger.info(f'config_data type: {type(config_data)}, metadata type: {type(metadata)}')
+            _logger.info(f'config_data type: {type(config_data)}')
 
             # Validate required fields
             if not config_data:
@@ -223,19 +222,9 @@ class NetSuiteConfigAPI(http.Controller):
             
             _logger.info(f'Found existing config ID: {config_record.id}, updating configuration...')
 
-            # Prepare full config JSON with metadata
-            # Ensure metadata is a dict
-            if not isinstance(metadata, dict):
-                metadata = {}
-
+            # Prepare config JSON (no metadata - NetSuite is source of truth)
             full_config = {
-                'configuration': config_data,
-                'metadata': {
-                    'config_version': metadata.get('config_version', '1.0'),
-                    'last_updated_by': metadata.get('last_updated_by', 'NetSuite System'),
-                    'last_updated_at': metadata.get('last_updated_at', fields.Datetime.now().isoformat()),
-                    'netsuite_environment': metadata.get('netsuite_environment', 'production')
-                }
+                'configuration': config_data
             }
 
             # Update configuration

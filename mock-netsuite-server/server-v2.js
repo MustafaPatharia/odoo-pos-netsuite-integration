@@ -108,8 +108,10 @@ app.get('/health', (req, res) => {
 });
 
 // ============================================
-// Configuration API
+// Configuration API & RESTlet Endpoints
 // ============================================
+
+// GET RESTlet - Configuration
 app.get('/app/site/hosting/restlet.nl', (req, res) => {
     const action = req.query.action;
 
@@ -187,9 +189,145 @@ app.get('/app/site/hosting/restlet.nl', (req, res) => {
     });
 });
 
+// POST RESTlet - Create EOD Orders & Invoices (NetSuite Standard)
+app.post('/app/site/hosting/restlet.nl', (req, res) => {
+    const action = req.query.action;
+
+    if (action === 'createEODOrder') {
+        console.log('✅ Creating consolidated EOD Sales Order (RESTlet)');
+        console.log('Payload:', JSON.stringify(req.body, null, 2));
+
+        const order = {
+            id: String(orderIdCounter++),
+            tranId: `SO-${Date.now()}`,
+            ...req.body,
+            createdAt: new Date().toISOString(),
+            status: 'Pending Fulfillment'
+        };
+
+        mockOrders.push(order);
+        console.log(`✅ Sales Order created: ${order.tranId} (ID: ${order.id})`);
+
+        return res.json({
+            success: true,
+            id: order.id,
+            tranId: order.tranId,
+            message: 'Consolidated sales order created successfully',
+            recordType: 'salesorder'
+        });
+    }
+
+    if (action === 'createEODInvoice') {
+        console.log('✅ Creating consolidated EOD Invoice (RESTlet)');
+        console.log('Payload:', JSON.stringify(req.body, null, 2));
+
+        const invoice = {
+            id: String(invoiceIdCounter++),
+            tranId: `INV-${Date.now()}`,
+            ...req.body,
+            createdAt: new Date().toISOString(),
+            status: 'Open'
+        };
+
+        mockInvoices.push(invoice);
+        console.log(`✅ Invoice created: ${invoice.tranId} (ID: ${invoice.id})`);
+
+        return res.json({
+            success: true,
+            id: invoice.id,
+            tranId: invoice.tranId,
+            message: 'Consolidated invoice created successfully',
+            recordType: 'invoice'
+        });
+    }
+
+    res.status(400).json({
+        success: false,
+        error: { message: 'Unknown action parameter' }
+    });
+});
+
+// ============================================================================
+// NetSuite Standard REST API - Create Records
+// ============================================================================
+
+// Create Sales Order (Standard REST API)
+app.post('/services/rest/record/v1/salesorder', (req, res) => {
+    console.log('✅ Creating Sales Order (NetSuite Standard REST API)');
+    console.log('Payload:', JSON.stringify(req.body, null, 2));
+
+    const order = {
+        id: String(orderIdCounter++),
+        tranId: `SO-${Date.now()}`,
+        ...req.body,
+        createdAt: new Date().toISOString(),
+        status: 'Pending Fulfillment'
+    };
+
+    mockOrders.push(order);
+    console.log(`✅ Sales Order created: ${order.tranId} (ID: ${order.id})`);
+
+    // NetSuite Standard REST API response format
+    res.status(201).json({
+        id: order.id,
+        tranId: order.tranId,
+        links: [
+            {
+                rel: 'self',
+                href: `/services/rest/record/v1/salesorder/${order.id}`
+            }
+        ]
+    });
+});
+
+// Create Invoice (Standard REST API)
+app.post('/services/rest/record/v1/invoice', (req, res) => {
+    console.log('✅ Creating Invoice (NetSuite Standard REST API)');
+    console.log('Payload:', JSON.stringify(req.body, null, 2));
+
+    const invoice = {
+        id: String(invoiceIdCounter++),
+        tranId: `INV-${Date.now()}`,
+        ...req.body,
+        createdAt: new Date().toISOString(),
+        status: 'Open'
+    };
+
+    mockInvoices.push(invoice);
+    console.log(`✅ Invoice created: ${invoice.tranId} (ID: ${invoice.id})`);
+
+    // NetSuite Standard REST API response format
+    res.status(201).json({
+        id: invoice.id,
+        tranId: invoice.tranId,
+        links: [
+            {
+                rel: 'self',
+                href: `/services/rest/record/v1/invoice/${invoice.id}`
+            }
+        ]
+    });
+});
+
 // ============================================
 // Product/Item APIs
 // ============================================
+
+// NetSuite Standard REST API - Get Items
+app.get('/services/rest/record/v1/inventoryItem', (req, res) => {
+    const limit = parseInt(req.query.limit) || 100;
+    const offset = parseInt(req.query.offset) || 0;
+
+    const items = mockProducts.slice(offset, offset + limit);
+
+    res.json({
+        items: items,
+        count: items.length,
+        hasMore: offset + limit < mockProducts.length,
+        offset: offset,
+        totalResults: mockProducts.length
+    });
+});
 
 // Get all products (NetSuite REST API format)
 app.get('/api/items', (req, res) => {

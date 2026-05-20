@@ -307,16 +307,24 @@ Stores all business logic settings:
 **Consolidation Example:**
 ```
 Input: 3 Orders from Shop A on May 20
-- Order 1: Coffee x2, Pastry x1
-- Order 2: Coffee x1, Juice x2
-- Order 3: Coffee x1, Sandwich x1
+- Order 1: Coffee x2, Pastry x1 (Paid: Cash 50 AED)
+- Order 2: Coffee x1, Juice x2 (Paid: Card 40 AED)
+- Order 3: Coffee x1, Sandwich x1 (Paid: Cash 30 AED + Card 20 AED - SPLIT)
 
-Output: 1 Consolidated Invoice
-- Coffee x4 (2+1+1)
+Output: 2 Consolidated Invoices
+
+Cash Invoice (Customer: Cash Customer):
+- Coffee x2.6 (2 + 0.6 from split order)
 - Pastry x1
+- Sandwich x0.6 (60% of split order)
+
+Card Invoice (Customer: Credit Customer):
+- Coffee x1.4 (1 + 0.4 from split order)
 - Juice x2
-- Sandwich x1
+- Sandwich x0.4 (40% of split order)
 ```
+
+**Note:** Split-payment orders are proportionally divided across payment method invoices.
 
 **Cron Configuration:**
 - **Name**: `NetSuite: End of Day Order Sync`

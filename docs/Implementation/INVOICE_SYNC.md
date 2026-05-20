@@ -2,7 +2,13 @@
 
 ## Overview
 
-The End-of-Day (EOD) Invoice Sync feature consolidates all POS orders from each shop for each day and creates **ONE Invoice per shop per day** in NetSuite. This matches the consolidated Sales Order pattern and provides complete financial reconciliation.
+The End-of-Day (EOD) Invoice Sync feature consolidates POS invoices and creates **separate invoices per payment method per shop per day** in NetSuite.
+
+**Key Features:**
+- **Payment Method Separation** - Cash and Credit invoices are separate
+- **Split-Payment Handling** - Orders with multiple payments are divided proportionally
+- **Customer Entity Mapping** - Different customers for Cash vs Credit
+- **Mode-Based Consolidation** - Real-time mode disables consolidation
 
 **Sync Methods:**
 - **Manual Sync** - Sync invoices for a specific date on-demand
@@ -10,13 +16,59 @@ The End-of-Day (EOD) Invoice Sync feature consolidates all POS orders from each 
 
 ---
 
+## 🔄 Split-Payment Handling
+
+### The Problem
+
+**Scenario:** A customer buys 100 AED of items but has only 60 AED cash, so pays 40 AED by credit card.
+
+**Challenge:** How to create separate Cash and Credit invoices in NetSuite without losing data?
+
+### The Solution
+
+**Proportional Splitting** - Each invoice gets its proportional share of line items.
+
+**Example:**
+
+**Odoo POS Order:**
+```
+Order #100: Total 100 AED
+  Products:
+    - Product A: 10 qty @ 5 AED = 50 AED
+    - Product B: 5 qty @ 10 AED = 50 AED
+
+  Payments:
+    - Cash: 60 AED (60%)
+    - Credit Card: 40 AED (40%)
+```
+
+**NetSuite Invoices Created:**
+
+**Cash Invoice (Customer: Cash Customer):**
+```
+- Product A: 6.0 qty @ 5 AED = 30 AED  (60% of 10 qty)
+- Product B: 3.0 qty @ 10 AED = 30 AED  (60% of 5 qty)
+Total: 60 AED ✓
+```
+
+**Credit Card Invoice (Customer: Credit Customer):**
+```
+- Product A: 4.0 qty @ 5 AED = 20 AED  (40% of 10 qty)
+- Product B: 2.0 qty @ 10 AED = 20 AED  (40% of 5 qty)
+Total: 40 AED ✓
+```
+
+**Result:** No data loss, perfect reconciliation! 🎉
+
+---
+
 ## Manual EOD Invoice Sync
 
 ### How to Trigger Manual Sync
 
-1. Navigate to: **NetSuite → Operations → EOD Invoice Summary**
+1. Navigate to: **NetSuite → Operations → Sync Invoices**
 
-2. Click the **"EOD Invoice Summary"** button
+2. Click the **"Sync Invoices"** button
 
 3. Odoo will:
    - Find all paid/invoiced orders for yesterday (default)
@@ -27,21 +79,23 @@ The End-of-Day (EOD) Invoice Sync feature consolidates all POS orders from each 
 ### What Happens During Sync
 
 1. **Validate** all products have NetSuite IDs
-2. **Fetch** all orders for target date with status: `paid`, `done`, or `invoiced`
-3. **Group** orders by warehouse (shop)
-4. **Aggregate** line items by product (sum quantities)
-5. **Aggregate** payments by payment method
-6. **Create** ONE Invoice in NetSuite per shop
-7. **Update** Odoo orders with NetSuite invoice ID
+2. **Fetch** all invoices for target date with status: `paid`, `done`, or `invoiced`
+3. **Calculate** payment proportions for each invoice (handles split payments)
+4. **Group** invoices by **(warehouse, payment_method)** combination
+5. **Aggregate** line items proportionally by product
+6. **Create** ONE Invoice in NetSuite per **(warehouse, payment_method)** group
+7. **Update** Odoo invoices with NetSuite invoice ID
 8. **Log** sync results
 
 **Example:**
 ```
 Shop: Main Store
 Date: 2026-05-16
-Orders: 8 POS orders
-Payments: Cash (150.00), Card (280.45), Mobile (65.50)
-Result: 1 Invoice (INV-463716) with aggregated items and payments
+Orders: 8 POS orders (5 cash-only, 2 card-only, 1 split payment)
+
+Result: 2 Invoices Created
+  - Cash Invoice (INV-001): 150.00 AED
+  - Card Invoice (INV-002): 280.45 AED
 ```
 
 ---
@@ -80,28 +134,54 @@ The daily sync runs automatically at midnight, shortly after order sync.
 
 ## Consolidated Invoice Structure
 
+### Grouping Logic
+
+**Invoices are grouped by:**
+1. **Warehouse/Shop** - Each shop gets separate invoices
+2. **Payment Method** - Each payment method gets a separate invoice
+3. **Date** - Invoices are created per day
+
+**Result:** One invoice per **(warehouse, payment_method, date)** combination
+
+**Example:**
+```
+Shop A on May 20:
+  - Cash Invoice → Customer: Cash Customer
+  - Credit Card Invoice → Customer: Credit Customer
+```
+
+### Split-Payment Handling
+
+**When a single order has multiple payment methods** (e.g., 60 AED cash + 40 AED card):
+- Order is **split proportionally** across payment invoices
+- Cash invoice gets 60% of line items
+- Card invoice gets 40% of line items
+- No data loss - all payments tracked correctly
+
 ### NetSuite Invoice Fields
 
 | Field | Value | Description |
 |---|---|---|
 | `recordType` | `invoice` | Record type |
-| `entity` | Default customer ID | Generic POS customer |
+| `entity` | Payment-specific customer | Cash Customer / Credit Customer (based on payment method) |
 | `subsidiary` | From warehouse mapping | NetSuite subsidiary |
 | `department` | From warehouse mapping | NetSuite department |
 | `location` | From warehouse mapping | NetSuite location |
 | `tranDate` | Invoice date | Date of the orders (YYYY-MM-DD) |
-| `memo` | "Consolidated POS Invoice - [Shop] - [Date]" | Description |
-| `custbody_pos_shop` | Warehouse name | Custom field |
-| `custbody_pos_date` | Invoice date | Custom field |
-| `custbody_pos_order_count` | Number of orders | Custom field |
-| `items[]` | Aggregated line items | Product details |
-| `payments[]` | Aggregated payments | Payment method breakdown |
+| `paymentMethod` | NetSuite payment method ID | Payment method reference |
+| `memo` | "Consolidated Invoice - [Shop] - [Date]" | Description |
+| `custbody_odoo_invoice_ids` | Array of invoice IDs | Tracking field |
+| `custbody_odoo_invoice_count` | Number of invoices | Count |
+| `custbody_payment_type` | Payment method ID | Payment type tracking |
+| `items[]` | Aggregated line items | Product details (proportional for split payments) |
 
 ### Line Item Aggregation
 
-Same as Order Sync - products are aggregated across all orders for the day.
+Products are aggregated across all invoice portions for each payment method.
 
-**Example:**
+**For split-payment orders**, quantities and amounts are calculated proportionally.
+
+**Example - Simple Aggregation (no split payments):**
 ```json
 {
   "items": [
@@ -111,30 +191,31 @@ Same as Order Sync - products are aggregated across all orders for the day.
 }
 ```
 
-### Payment Aggregation
-
-Payments are summed by payment method across all orders.
-
-**Before (8 orders):**
+**Example - With Split Payment:**
 ```
-Order 1: Cash (15.00), Card (35.00)
-Order 2: Card (45.50)
-Order 3: Cash (25.00)
-Order 4: Mobile Pay (20.00)
-Order 5: Cash (30.00), Card (15.00)
-...
+Order: 100 AED (60 AED cash + 40 AED card)
+  - Product A: 10 qty @ 10 AED = 100 AED
+
+Cash Invoice (60%):
+  - Product A: 6.0 qty @ 10 AED = 60 AED
+
+Card Invoice (40%):
+  - Product A: 4.0 qty @ 10 AED = 40 AED
 ```
 
-**After (1 consolidated invoice):**
-```json
-{
-  "payments": [
-    {"paymentMethod": "1", "amount": 150.00},  // Cash
-    {"paymentMethod": "2", "amount": 280.45},  // Card
-    {"paymentMethod": "3", "amount": 65.50}    // Mobile Pay
-  ]
-}
-```
+### Customer Entity Mapping
+
+**Different payment methods use different NetSuite customer entities:**
+
+| Payment Method | NetSuite Customer Entity |
+|----------------|-------------------------|
+| Cash | Customer ID 1 (Cash Customer) |
+| Credit Card | Customer ID 2 (Credit Customer) |
+| Mobile/Other | Customer ID 3 (Mobile Customer) |
+
+**Why?** Client requirement - reconciliation reports need to distinguish between cash and credit transactions.
+
+**Configurable:** Customer mapping can be configured in `netsuite_config` (future enhancement).
 
 ---
 
@@ -222,16 +303,30 @@ Each log entry contains:
 
 ---
 
+## Integration Mode Behavior
+
+**The consolidation logic depends on the integration mode:**
+
+| Mode | Consolidation | Behavior |
+|------|---------------|----------|
+| **Real-time** | ❌ Disabled | 1:1 order to invoice mapping (no consolidation) |
+| **Scheduled** | ✅ Enabled | Consolidated invoices (grouped by warehouse + payment + date) |
+| **Manual** | ✅ Enabled | Consolidated invoices (grouped by warehouse + payment + date) |
+
+**Why?** Client requirement - real-time mode for immediate sync, scheduled/manual for batch processing.
+
 ## Differences from Order Sync
 
 | Aspect | Order Sync | Invoice Sync |
 |---|---|---|
 | **NetSuite Record** | Sales Order | Invoice |
-| **Grouping** | By shop + date | By shop only (for specific date) |
-| **Includes Payments** | No | Yes |
+| **Grouping** | By shop + date | By shop + payment + date |
+| **Customer Entity** | Default customer | Payment-specific customer |
+| **Includes Payments** | No | Yes (via customer + payment method field) |
+| **Split Payments** | First payment only | Proportional splitting |
 | **Cron Time** | 00:05 | 00:10 |
 | **Sync Mode** | All unsynced dates (manual) | Specific date only |
-| **Fields Updated** | `netsuite_id`, `netsuite_tran_id` | `x_netsuite_invoice_id` |
+| **Fields Updated** | `netsuite_id`, `netsuite_tran_id` | `netsuite_id`, `netsuite_tran_id`, `netsuite_sync_status` |
 | **Record Type Log** | `eod_order` | `eod_invoice` |
 
 ---

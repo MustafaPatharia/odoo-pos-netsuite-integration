@@ -65,17 +65,6 @@
                                     <field name="config_backoff_multiplier" readonly="1"/>
                                 </group>
 
-                                <group string="Scheduled Sync Settings">
-                                    <field name="config_hourly_sync_enabled" readonly="1"/>
-                                    <field name="config_product_sync_frequency" readonly="1"/>
-                                    <field name="config_order_sync_time" readonly="1"/>
-                                    <field name="config_invoice_sync_time" readonly="1"/>
-                                </group>
-
-                                <group string="Batch Processing">
-                                    <field name="config_product_batch_size" readonly="1"/>
-                                </group>
-
                                 <group string="Notifications">
                                     <field name="config_send_email_on_failure" readonly="1"/>
                                     <field name="config_send_email_on_success" readonly="1"/>
@@ -89,21 +78,33 @@
                                     <field name="config_log_response_payload" readonly="1"/>
                                 </group>
 
-                                <group string="Connection Settings">
-                                    <field name="config_connection_timeout" readonly="1"/>
-                                    <field name="config_request_timeout" readonly="1"/>
-                                    <field name="config_api_rate_limit" readonly="1"/>
-                                </group>
-
                                 <group string="Consolidation Rules">
                                     <field name="config_consolidate_orders" readonly="1"/>
                                     <field name="config_consolidate_invoices" readonly="1"/>
+
                                 </group>
                             </group>
 
+                            <!-- Validation Warning: Real-time + Consolidation Conflict -->
+                            <div class="alert alert-danger" role="alert"
+                                    invisible="config_integration_mode != 'realtime' or (not config_consolidate_orders and not config_consolidate_invoices)">
+                                <strong>⚠️ Configuration Error!</strong>
+                                <p style="margin-top: 5px; margin-bottom: 0;">
+                                    Real-Time mode does not support consolidation.
+                                    Please update NetSuite configuration to disable consolidation flags or switch to Scheduled/Manual mode.
+                                </p>
+                            </div>
+
+                            <!-- Info: Manual Button Behavior -->
+                            <div class="alert alert-info" role="alert" style="margin-top: 10px;">
+                                <strong>ℹ️ Manual Sync Buttons:</strong>
+                                <ul style="margin-bottom: 0; padding-left: 20px;">
+                                    <li><strong>Real-time mode:</strong> Manual buttons work as fallback (forced 1:1 sync)</li>
+                                    <li><strong>Scheduled/Manual modes:</strong> Manual buttons respect consolidation flags above</li>
+                                </ul>
+                            </div>
                             <div class="alert alert-warning" role="alert" invisible="not netsuite_config">
                                 <p><strong>Note:</strong> All these settings are controlled by NetSuite and cannot be changed from Odoo.</p>
-                                <!-- <p>To modify these values, update the configuration record in NetSuite and click <strong>"Fetch Configuration"</strong> again.</p> -->
                             </div>
                         </page>
                     </notebook>

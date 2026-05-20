@@ -35,9 +35,9 @@ Content-Type: application/json
 **Type:** `string` | **Required:** Yes
 
 **Valid Values:**
-- `"realtime"` - Immediate sync when events occur
-- `"scheduled"` - Sync at scheduled times
-- `"manual"` - Manual sync only
+- `"realtime"` - Immediate 1:1 sync when events occur (no consolidation)
+- `"scheduled"` - Sync at scheduled times (respects consolidation flag)
+- `"manual"` - Manual sync only (respects consolidation flag)
 
 ---
 
@@ -90,15 +90,6 @@ Content-Type: application/json
 
 ---
 
-### `batch_processing`
-**Type:** `object`
-
-| Property | Type | Valid Values | Default |
-|----------|------|--------------|---------|
-| `product_batch_size` | integer | `1` to `200` | `50` |
-
----
-
 ### `notification`
 **Type:** `object`
 
@@ -122,35 +113,19 @@ Content-Type: application/json
 
 ---
 
-### `api_settings`
-**Type:** `object`
-
-| Property | Type | Valid Values | Default |
-|----------|------|--------------|---------|
-| `connection_timeout_seconds` | integer | `5` to `120` | `30` |
-| `request_timeout_seconds` | integer | `30` to `600` | `120` |
-| `api_rate_limit_per_minute` | integer | `10` to `300` | `60` |
-
----
-
 ### `consolidation_rules`
 **Type:** `object`
 
-| Property | Type | Valid Values | Default |
-|----------|------|--------------|---------|
-| `consolidate_orders_per_shop_per_day` | boolean | `true` \| `false` | `true` |
-| `consolidate_invoices_per_shop_per_day` | boolean | `true` \| `false` | `true` |
+| Property | Type | Valid Values | Default | Notes |
+|----------|------|--------------|---------|-------|
+| `consolidate_orders` | boolean | `true` \| `false` | `true` | N:1 if true, 1:1 if false. Must be false in realtime mode. |
+| `consolidate_invoices` | boolean | `true` \| `false` | `true` | N:1 if true, 1:1 if false. Must be false in realtime mode. |
 
----
-
-## Metadata Properties
-
-| Property | Type | Valid Values | Default |
-|----------|------|--------------|---------|
-| `config_version` | string | Any version string | `"1.0"` |
-| `last_updated_by` | string | Any username/identifier | `"NetSuite System"` |
-| `last_updated_at` | string | ISO 8601 datetime | Current timestamp |
-| `netsuite_environment` | string | `"production"` \| `"sandbox"` | `"production"` |
+**Behavior:**
+- `true`: Consolidate multiple records into one (N:1)
+- `false`: Send each record individually (1:1)
+- **Realtime mode**: Must be `false` (validation enforced)
+- **Scheduled/Manual modes**: Can be `true` or `false`
 
 ---
 
@@ -214,9 +189,6 @@ curl -X POST http://localhost:8069/api/netsuite/config/update \
       "use_exponential_backoff": true,
       "backoff_multiplier": 2
     },
-    "batch_processing": {
-      "product_batch_size": 50
-    },
     "notification": {
       "send_email_on_failure": true,
       "send_email_on_success": false,
@@ -231,21 +203,10 @@ curl -X POST http://localhost:8069/api/netsuite/config/update \
       "log_request_payload": true,
       "log_response_payload": true
     },
-    "api_settings": {
-      "connection_timeout_seconds": 30,
-      "request_timeout_seconds": 120,
-      "api_rate_limit_per_minute": 60
-    },
     "consolidation_rules": {
-      "consolidate_orders_per_shop_per_day": true,
-      "consolidate_invoices_per_shop_per_day": true
+      "consolidate_orders": true,
+      "consolidate_invoices": true
     }
-  },
-  "metadata": {
-    "config_version": "1.0",
-    "last_updated_by": "NetSuite Admin",
-    "last_updated_at": "2026-05-18T15:22:07Z",
-    "netsuite_environment": "sandbox"
   }
 }'
 ```
@@ -259,6 +220,7 @@ curl -X POST http://localhost:8069/api/netsuite/config/update \
 - `scheduled_settings.order_sync_time`: `HH:MM` format (00:00 - 23:59)
 - `scheduled_settings.invoice_sync_time`: `HH:MM` format (00:00 - 23:59)
 - `notification.notification_recipients`: Array of valid email addresses
+- **Real-time mode constraint**: `consolidate_orders` and `consolidate_invoices` must be `false`
 
 ---
 

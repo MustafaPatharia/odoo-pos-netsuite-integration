@@ -47,6 +47,11 @@ class NetSuiteProductSync(models.AbstractModel):
             _logger.error('[NetSuite Product Sync] No active NetSuite configuration found')
             raise UserError(_('No active NetSuite configuration found'))
 
+        # Cron jobs should only run in 'scheduled' integration mode
+        if sync_mode == 'scheduled' and config.config_integration_mode != 'scheduled':
+            _logger.info(f'[NetSuite Product Sync Cron] Skipped - Integration mode is "{config.config_integration_mode}", expected "scheduled"')
+            return {'success': True, 'skipped': True, 'reason': f'Integration mode is {config.config_integration_mode}, not scheduled'}
+
         _logger.info(f'[NetSuite Product Sync] Using config: {config.name} (API: {config.api_url})')
 
         # Log sync start
@@ -286,10 +291,7 @@ class NetSuiteProductSync(models.AbstractModel):
 
             headers = self._get_netsuite_headers(config)
 
-            timeout = (
-                config.config_connection_timeout or 30,
-                config.config_request_timeout or 120
-            )
+            timeout = (30, 120)  # Connection timeout, Request timeout
 
             response = requests.get(url, headers=headers, params=params, timeout=timeout)
             response.raise_for_status()

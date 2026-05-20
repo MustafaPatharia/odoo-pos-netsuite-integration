@@ -14,9 +14,9 @@ The End-of-Day (EOD) Order Sync feature consolidates all POS orders from each sh
 
 ### How to Trigger Manual Sync
 
-1. Navigate to: **NetSuite → Operations → EOD Order Summary**
+1. Navigate to: **NetSuite → Operations → Sync Orders**
 
-2. Click the **"EOD Order Summary"** button
+2. Click the **"Sync Orders"** button
 
 3. Odoo will:
    - Find all unsynced POS orders (excluding today)
@@ -269,5 +269,5 @@ Before using EOD Order Sync:
 ✅ **Production-ready** - Comprehensive error handling and validation
 ---
 
-**Last Updated:** May 17, 2026  
+**Last Updated:** May 17, 2026
 **Version:** 1.0

@@ -132,12 +132,25 @@ class NetSuiteConsolidatedSync(models.AbstractModel):
         Returns:
             dict: Sync results
         """
-        self._log_debug(config, '[NetSuite EOD Orders] ========== SYNC STARTED ==========')
-
         config = self.env['netsuite.config'].get_active_config()
 
-        if not config.config_consolidate_orders:
-            raise UserError(_('Consolidated order sync is disabled in configuration'))
+        # Cron jobs should only run in 'scheduled' integration mode
+        if sync_mode == 'scheduled' and config.config_integration_mode != 'scheduled':
+            _logger.info(f'[NetSuite Order Sync Cron] Skipped - Integration mode is "{config.config_integration_mode}", expected "scheduled"')
+            return {'success': True, 'skipped': True, 'reason': f'Integration mode is {config.config_integration_mode}, not scheduled'}
+
+        self._log_debug(config, '[NetSuite EOD Orders] ========== SYNC STARTED ==========')
+
+        # Determine consolidation behavior based on integration mode
+        # Real-time mode: FORCE 1:1 sync (manual button acts as fallback when realtime fails)
+        # Scheduled/Manual mode: Respect consolidation flag (N:1 or 1:1 based on config)
+        force_individual_sync = config.config_integration_mode == 'realtime'
+        use_consolidation = config.config_consolidate_orders and not force_individual_sync
+
+        if force_individual_sync:
+            self._log_debug(config, '[NetSuite EOD Orders] Real-time mode detected: Forcing 1:1 individual sync (fallback mode)')
+        else:
+            self._log_debug(config, f'[NetSuite EOD Orders] Consolidation enabled: {use_consolidation}')
 
         self._log_debug(config, f'[NetSuite EOD Orders] Sync mode: {"ALL DATES" if sync_all_dates else "SINGLE DATE"}')
         self._log_debug(config, f'[NetSuite EOD Orders] Using config: {config.name} (API: {config.api_url})')
@@ -210,10 +223,21 @@ class NetSuiteConsolidatedSync(models.AbstractModel):
             })
             raise ValidationError(error_msg)
 
-        # Group orders by warehouse/shop and date
-        orders_by_shop_and_date = self._group_orders_by_shop(pos_orders)
-
-        _logger.info(f'[NetSuite EOD Orders] Found {len(orders_by_shop_and_date)} shop+date combinations with {len(pos_orders)} total orders')
+        # Determine sync strategy based on consolidation flag
+        if use_consolidation:
+            # N:1 Consolidation: Group orders by warehouse/shop and date
+            _logger.info('[NetSuite EOD Orders] Using CONSOLIDATED sync (N:1) - grouping by shop+date')
+            orders_by_shop_and_date = self._group_orders_by_shop(pos_orders)
+            _logger.info(f'[NetSuite EOD Orders] Found {len(orders_by_shop_and_date)} shop+date combinations with {len(pos_orders)} total orders')
+        else:
+            # 1:1 Individual: Send each order separately
+            _logger.info('[NetSuite EOD Orders] Using INDIVIDUAL sync (1:1) - sending orders separately')
+            orders_by_shop_and_date = {}
+            for order in pos_orders:
+                # Use order.id as unique key to send each order individually
+                key = (order.config_id.warehouse_id.id, order.date_order.date(), order.id)
+                orders_by_shop_and_date[key] = self.env['pos.order'].browse(order.id)
+            _logger.info(f'[NetSuite EOD Orders] Found {len(orders_by_shop_and_date)} individual orders to sync')
 
         results = {
             'success': True,
@@ -228,8 +252,16 @@ class NetSuiteConsolidatedSync(models.AbstractModel):
         }
 
         # Process each shop+date combination
-        for (warehouse_id, order_date), shop_orders in orders_by_shop_and_date.items():
+        for key, shop_orders in orders_by_shop_and_date.items():
             try:
+                # Handle both consolidation modes:
+                # - Consolidated: (warehouse_id, order_date)
+                # - Individual: (warehouse_id, order_date, order_id)
+                if use_consolidation:
+                    warehouse_id, order_date = key
+                else:
+                    warehouse_id, order_date, order_id = key
+
                 warehouse = self.env['stock.warehouse'].browse(warehouse_id)
                 shop_name = warehouse.name
                 _logger.info(f'[NetSuite EOD Orders] Processing: {shop_name} | {order_date} | {len(shop_orders)} orders')
@@ -342,12 +374,25 @@ class NetSuiteConsolidatedSync(models.AbstractModel):
         Returns:
             dict: Sync results
         """
-        self._log_debug(config, '[NetSuite EOD Invoices] ========== SYNC STARTED ==========')
-
         config = self.env['netsuite.config'].get_active_config()
 
-        if not config.config_consolidate_invoices:
-            raise UserError(_('Consolidated invoice sync is disabled in configuration'))
+        # Cron jobs should only run in 'scheduled' integration mode
+        if sync_mode == 'scheduled' and config.config_integration_mode != 'scheduled':
+            _logger.info(f'[NetSuite Invoice Sync Cron] Skipped - Integration mode is "{config.config_integration_mode}", expected "scheduled"')
+            return {'success': True, 'skipped': True, 'reason': f'Integration mode is {config.config_integration_mode}, not scheduled'}
+
+        self._log_debug(config, '[NetSuite EOD Invoices] ========== SYNC STARTED ==========')
+
+        # Determine consolidation behavior based on integration mode
+        # Real-time mode: FORCE 1:1 sync (manual button acts as fallback when realtime fails)
+        # Scheduled/Manual mode: Respect consolidation flag (N:1 or 1:1 based on config)
+        force_individual_sync = config.config_integration_mode == 'realtime'
+        use_consolidation = config.config_consolidate_invoices and not force_individual_sync
+
+        if force_individual_sync:
+            self._log_debug(config, '[NetSuite EOD Invoices] Real-time mode detected: Forcing 1:1 individual sync (fallback mode)')
+        else:
+            self._log_debug(config, f'[NetSuite EOD Invoices] Consolidation enabled: {use_consolidation}')
 
         # Determine target date
         if not target_date:
@@ -356,6 +401,7 @@ class NetSuiteConsolidatedSync(models.AbstractModel):
             target_date = datetime.strptime(target_date, '%Y-%m-%d').date()
 
         self._log_debug(config, f'[NetSuite EOD Invoices] Target date: {target_date}, Warehouses: {warehouse_ids or "ALL"}')
+        self._log_debug(config, f'[NetSuite EOD Invoices] Consolidation enabled: {config.config_consolidate_invoices}')
         self._log_debug(config, f'[NetSuite EOD Invoices] Using config: {config.name} (API: {config.api_url})')
 
         # Create sync log
@@ -417,15 +463,35 @@ class NetSuiteConsolidatedSync(models.AbstractModel):
             })
             raise ValidationError(error_msg)
 
-        # Group invoices by warehouse and payment method
-        invoices_grouped = self._group_invoices_by_warehouse_and_payment(invoices)
-
-        _logger.info(f'[NetSuite EOD Invoices] Found {len(invoices_grouped)} groups (warehouse+payment) with {len(invoices)} total invoices')
+        # Determine sync strategy based on consolidation flag
+        if use_consolidation:
+            # N:1 Consolidation: Group invoices by warehouse + payment method
+            _logger.info('[NetSuite EOD Invoices] Using CONSOLIDATED sync (N:1) - grouping by warehouse+payment')
+            invoices_grouped = self._group_invoices_by_warehouse_and_payment(invoices)
+            total_portions = sum(len(portions) for portions in invoices_grouped.values())
+            _logger.info(f'[NetSuite EOD Invoices] Found {len(invoices_grouped)} groups with {total_portions} invoice portions from {len(invoices)} invoices')
+        else:
+            # 1:1 Individual: Send each invoice separately
+            _logger.info('[NetSuite EOD Invoices] Using INDIVIDUAL sync (1:1) - sending invoices separately')
+            invoices_grouped = {}
+            for invoice in invoices:
+                # Use invoice.id as unique key to send each invoice individually
+                warehouse_id = invoice.pos_order_ids[0].config_id.warehouse_id.id if invoice.pos_order_ids else None
+                key = (warehouse_id, None, invoice.id)  # None for payment_method since we're not grouping by payment
+                invoices_grouped[key] = [{
+                    'invoice': invoice,
+                    'proportion': 1.0,
+                    'payment_amount': invoice.amount_total,
+                    'payment_method_id': None
+                }]
+            total_portions = len(invoices)
+            _logger.info(f'[NetSuite EOD Invoices] Found {len(invoices_grouped)} individual invoices to sync')
 
         results = {
             'success': True,
             'total_groups': len(invoices_grouped),
             'total_invoices': len(invoices),
+            'total_portions': total_portions,
             'synced': 0,
             'failed': 0,
             'errors': [],
@@ -435,14 +501,22 @@ class NetSuiteConsolidatedSync(models.AbstractModel):
         }
 
         # Process each group (warehouse + payment method)
-        for (warehouse_id, payment_method_id), group_invoices in invoices_grouped.items():
+        for key, invoice_portions in invoices_grouped.items():
             try:
+                # Handle both consolidation modes:
+                # - Consolidated: (warehouse_id, payment_method_id)
+                # - Individual: (warehouse_id, payment_method_id, invoice_id)
+                if use_consolidation:
+                    warehouse_id, payment_method_id = key
+                else:
+                    warehouse_id, payment_method_id, invoice_id = key
+
                 warehouse = self.env['stock.warehouse'].browse(warehouse_id) if warehouse_id else None
                 warehouse_name = warehouse.name if warehouse else 'Default'
-                _logger.info(f'[NetSuite EOD Invoices] Processing: {warehouse_name} | Payment Method: {payment_method_id} | {len(group_invoices)} invoices')
+                _logger.info(f'[NetSuite EOD Invoices] Processing: {warehouse_name} | Payment: {payment_method_id} | {len(invoice_portions)} invoice portions')
 
                 group_result = self._sync_consolidated_invoice_for_warehouse(
-                    config, warehouse_id, group_invoices, target_date, payment_method_id
+                    config, warehouse_id, invoice_portions, target_date, payment_method_id
                 )
                 results['synced'] += 1
                 results['status_codes'].append(group_result.get('status_code'))
@@ -454,7 +528,7 @@ class NetSuiteConsolidatedSync(models.AbstractModel):
                 results['sync_details'].append({
                     'warehouse': warehouse_name,
                     'payment_method': payment_method_id,
-                    'invoices': len(group_invoices),
+                    'invoice_portions': len(invoice_portions),
                     'status': 'success',
                     'status_code': group_result.get('status_code'),
                     'netsuite_id': group_result.get('netsuite_invoice_id')
@@ -469,7 +543,7 @@ class NetSuiteConsolidatedSync(models.AbstractModel):
                 results['sync_details'].append({
                     'warehouse': warehouse_name if 'warehouse_name' in locals() else 'Unknown',
                     'payment_method': payment_method_id if 'payment_method_id' in locals() else 'Unknown',
-                    'invoices': len(group_invoices),
+                    'invoice_portions': len(invoice_portions) if 'invoice_portions' in locals() else 0,
                     'status': 'failed',
                     'status_code': status_code,
                     'error': str(e)
@@ -508,7 +582,7 @@ class NetSuiteConsolidatedSync(models.AbstractModel):
 
         # Send email notification
         if results['success']:
-            subject = f'✓ NetSuite Invoices Sync Successful - {results["synced"]} sync(s)'
+            subject = f'✓ NetSuite Invoices Sync Successful - {results["synced"]} group(s)'
             body = f'''
                 <h3>NetSuite Invoices Sync Completed Successfully</h3>
                 <ul>
@@ -536,7 +610,7 @@ class NetSuiteConsolidatedSync(models.AbstractModel):
 
     def _get_all_unsynced_orders(self, warehouse_ids=None):
         """Get ALL past unsynced POS orders (excluding today)"""
-        today_start = datetime.combine(datetime.now().date(), time.min)
+        today_start = datetime.combine(datetime.now().date(), dt_time.min)
 
         domain = [
             ('date_order', '<', today_start),  # Exclude today
@@ -556,8 +630,8 @@ class NetSuiteConsolidatedSync(models.AbstractModel):
     def _get_orders_for_date(self, target_date, warehouse_ids=None):
         """Get POS orders for a specific date"""
         domain = [
-            ('date_order', '>=', datetime.combine(target_date, time.min)),
-            ('date_order', '<', datetime.combine(target_date + timedelta(days=1), time.min)),
+            ('date_order', '>=', datetime.combine(target_date, dt_time.min)),
+            ('date_order', '<', datetime.combine(target_date + timedelta(days=1), dt_time.min)),
             ('state', 'in', ['paid', 'done', 'invoiced']),
             '|',
             ('netsuite_sync_status', 'in', ['not_synced', 'failed']),
@@ -661,10 +735,14 @@ class NetSuiteConsolidatedSync(models.AbstractModel):
         payload['custbody_odoo_order_ids'] = order_ids
         payload['custbody_odoo_order_count'] = len(order_ids)
 
-        if response.get('success'):
+        # Send to NetSuite Standard REST API
+        response = self._post_to_netsuite(config, '/services/rest/record/v1/salesorder', payload)
+
+        # NetSuite Standard REST API returns 201 with id, tranId (no 'success' field)
+        if response.get('id'):
             netsuite_id = response.get('id')
             netsuite_tran_id = response.get('tranId')
-            status_code = response.get('status_code', 200)
+            status_code = response.get('status_code', 201)
 
             # Update all orders in this consolidation
             shop_orders.write({
@@ -746,12 +824,13 @@ class NetSuiteConsolidatedSync(models.AbstractModel):
         if aggregated_payments:
             payload['payments'] = aggregated_payments
 
-        # Send to NetSuite
-        response = self._post_to_netsuite(config, '/app/site/hosting/restlet.nl?action=createEODInvoice', payload)
+        # Send to NetSuite Standard REST API
+        response = self._post_to_netsuite(config, '/services/rest/record/v1/invoice', payload)
 
-        if response.get('success'):
+        # NetSuite Standard REST API returns 201 with id, tranId (no 'success' field)
+        if response.get('id'):
             netsuite_invoice_id = response.get('id')
-            status_code = response.get('status_code', 200)
+            status_code = response.get('status_code', 201)
 
             # Update orders
             shop_orders.write({
@@ -865,6 +944,36 @@ class NetSuiteConsolidatedSync(models.AbstractModel):
         """
         return '1'  # Default customer in NetSuite
 
+    def _get_customer_for_payment_method(self, config, payment_method_id):
+        """
+        Get NetSuite customer entity ID based on payment method
+
+        Different payment methods use different customer entities:
+        - Cash payments → Cash Customer
+        - Credit/Card payments → Credit Customer
+        - Mobile payments → Mobile Customer (or default)
+
+        Args:
+            config: NetSuite config record
+            payment_method_id: NetSuite payment method ID (string)
+
+        Returns:
+            str: NetSuite customer entity ID
+        """
+        # Check if there's a mapping for payment method → customer
+        # This would need to be configured in netsuite_config or a new model
+
+        # For now, use simple logic based on payment method ID
+        # TODO: Make this configurable via netsuite_config custom fields
+
+        payment_customer_map = {
+            '1': '1',   # Cash → Customer ID 1 (Cash Customer)
+            '2': '2',   # Credit Card → Customer ID 2 (Credit Customer)
+            '3': '3',   # Mobile/Other → Customer ID 3 (Mobile Customer)
+        }
+
+        return payment_customer_map.get(str(payment_method_id), '1')  # Default to customer 1
+
     def _post_to_netsuite(self, config, endpoint, payload):
         """
         POST data to NetSuite REST API with retry logic
@@ -882,7 +991,7 @@ class NetSuiteConsolidatedSync(models.AbstractModel):
         if config.consumer_key:
             headers['Authorization'] = f'OAuth realm="{config.account_id}"'
 
-        timeout = (config.config_connection_timeout or 30, config.config_request_timeout or 120)
+        timeout = (30, 120)  # Connection timeout, Request timeout
 
         # Retry configuration from NetSuite config
         retry_enabled = config.config_retry_enabled if hasattr(config, 'config_retry_enabled') else True
@@ -1080,17 +1189,63 @@ class NetSuiteConsolidatedSync(models.AbstractModel):
 
         return None
 
+    def _get_payment_proportions_for_invoice(self, invoice):
+        """
+        Calculate payment method proportions for an invoice
+
+        For split-payment invoices, returns the proportion of each payment method.
+
+        Returns:
+            list: [
+                {'payment_method_id': '1', 'amount': 60.00, 'proportion': 0.6},
+                {'payment_method_id': '2', 'amount': 40.00, 'proportion': 0.4}
+            ]
+        """
+        pos_order = self.env['pos.order'].search([('account_move', '=', invoice.id)], limit=1)
+
+        if not pos_order or not pos_order.payment_ids:
+            return []
+
+        total_amount = sum(payment.amount for payment in pos_order.payment_ids)
+
+        if total_amount == 0:
+            return []
+
+        proportions = []
+        for payment in pos_order.payment_ids:
+            # Get NetSuite payment method mapping
+            mapping = self.env['netsuite.payment.method.mapping'].search([
+                ('odoo_payment_method_id', '=', payment.payment_method_id.id)
+            ], limit=1)
+
+            netsuite_payment_method = mapping.netsuite_payment_method_id if mapping else '1'
+
+            proportions.append({
+                'payment_method_id': netsuite_payment_method,
+                'amount': payment.amount,
+                'proportion': payment.amount / total_amount
+            })
+
+        return proportions
+
     def _group_invoices_by_warehouse_and_payment(self, invoices):
         """
         Group invoices by warehouse and payment method
 
+        Handles split-payment invoices by creating separate entries for each payment method.
+        Each entry includes the payment proportion for later processing.
+
         Returns:
             dict: {
-                (warehouse_id, netsuite_payment_method_id): [invoice1, invoice2, ...],
+                (warehouse_id, netsuite_payment_method_id): [
+                    {'invoice': invoice1, 'proportion': 1.0},
+                    {'invoice': invoice2, 'proportion': 0.6},  # 60% of invoice2
+                    ...
+                ],
                 ...
             }
         """
-        grouped = defaultdict(lambda: self.env['account.move'])
+        grouped = defaultdict(list)
 
         for invoice in invoices:
             warehouse_id = None
@@ -1111,15 +1266,21 @@ class NetSuiteConsolidatedSync(models.AbstractModel):
                 if default_warehouse:
                     warehouse_id = default_warehouse.id
 
-            # Get NetSuite payment method
-            netsuite_payment_method = self._get_netsuite_payment_method_for_invoice(invoice)
+            # Get payment proportions (handles split payments)
+            payment_proportions = self._get_payment_proportions_for_invoice(invoice)
 
-            if not netsuite_payment_method:
-                _logger.warning(f'[NetSuite EOD Invoices] Invoice {invoice.name} has no NetSuite payment method mapping, using default')
-                netsuite_payment_method = '1'  # Default payment method
+            if not payment_proportions:
+                _logger.warning(f'[NetSuite EOD Invoices] Invoice {invoice.name} has no payment data, using default')
+                payment_proportions = [{'payment_method_id': '1', 'amount': 0, 'proportion': 1.0}]
 
-            group_key = (warehouse_id, netsuite_payment_method)
-            grouped[group_key] |= invoice
+            # Add invoice to each payment method group with its proportion
+            for payment_info in payment_proportions:
+                group_key = (warehouse_id, payment_info['payment_method_id'])
+                grouped[group_key].append({
+                    'invoice': invoice,
+                    'proportion': payment_info['proportion'],
+                    'payment_amount': payment_info['amount']
+                })
 
         return dict(grouped)
 
@@ -1157,10 +1318,17 @@ class NetSuiteConsolidatedSync(models.AbstractModel):
             'products_with_ids': len(all_products) - len(products_without_ids)
         }
 
-    def _sync_consolidated_invoice_for_warehouse(self, config, warehouse_id, invoices, target_date, payment_method_id):
+    def _sync_consolidated_invoice_for_warehouse(self, config, warehouse_id, invoice_portions, target_date, payment_method_id):
         """
-        Create ONE consolidated Invoice in NetSuite for a warehouse + payment method for a day
+        Create ONE consolidated Invoice in NetSuite for a warehouse + payment method per day
         Updates account.move records with NetSuite sync info
+
+        Args:
+            config: NetSuite config record
+            warehouse_id: Warehouse/shop ID
+            invoice_portions: List of dicts with 'invoice', 'proportion', 'payment_amount'
+            target_date: Date of invoices
+            payment_method_id: NetSuite payment method ID
         """
         # Get subsidiary mapping
         SubsidiaryMapping = self.env['netsuite.subsidiary.mapping']
@@ -1175,19 +1343,23 @@ class NetSuiteConsolidatedSync(models.AbstractModel):
                 'location_id': None
             }
 
-        # Aggregate line items from all invoices
-        aggregated_lines = self._aggregate_invoice_lines(invoices, config)
+        # Aggregate line items from all invoice portions (with proportional amounts)
+        aggregated_lines = self._aggregate_invoice_lines_proportional(invoice_portions, config)
 
-        # Collect Odoo invoice IDs for custom field
-        invoice_ids = [inv.id for inv in invoices]  # Internal database IDs
+        # Collect Odoo invoice IDs for custom field (unique invoices only)
+        unique_invoices = list(set(portion['invoice'] for portion in invoice_portions))
+        invoice_ids = [inv.id for inv in unique_invoices]  # Internal database IDs
 
         # Prepare consolidated invoice payload
         warehouse = self.env['stock.warehouse'].browse(warehouse_id) if warehouse_id else None
         warehouse_name = warehouse.name if warehouse else 'Default'
         invoice_date = target_date.strftime('%Y-%m-%d')
 
+        # Get customer entity based on payment method
+        customer_id = self._get_customer_for_payment_method(config, payment_method_id)
+
         payload = {
-            'entity': {'id': str(self._get_default_customer_id(config))},
+            'entity': {'id': str(customer_id)},
             'tranDate': invoice_date,
             'subsidiary': {'id': str(subsidiary_data['subsidiary_id'])},
             'currency': {'id': '1'},  # AED currency
@@ -1209,17 +1381,20 @@ class NetSuiteConsolidatedSync(models.AbstractModel):
         # Add custom fields for Odoo invoice tracking
         payload['custbody_odoo_invoice_ids'] = invoice_ids
         payload['custbody_odoo_invoice_count'] = len(invoice_ids)
+        payload['custbody_payment_type'] = str(payment_method_id)  # Track payment type in custom field
 
-        # Send to NetSuite
-        response = self._post_to_netsuite(config, '/app/site/hosting/restlet.nl?action=createEODInvoice', payload)
+        # Send to NetSuite Standard REST API
+        response = self._post_to_netsuite(config, '/services/rest/record/v1/invoice', payload)
 
-        if response.get('success'):
+        # NetSuite Standard REST API returns 201 with id, tranId (no 'success' field)
+        if response.get('id'):
             netsuite_invoice_id = response.get('id')
             netsuite_tran_id = response.get('tranId')
-            status_code = response.get('status_code', 200)
+            status_code = response.get('status_code', 201)
 
-            # Update all invoices in this consolidation
-            invoices.write({
+            # Update all unique invoices in this consolidation (convert list to recordset)
+            invoices_recordset = self.env['account.move'].browse([inv.id for inv in unique_invoices])
+            invoices_recordset.write({
                 'netsuite_sync_status': 'synced',
                 'netsuite_id': netsuite_invoice_id,
                 'netsuite_tran_id': netsuite_tran_id,
@@ -1238,8 +1413,9 @@ class NetSuiteConsolidatedSync(models.AbstractModel):
             error_msg = response.get('error', 'Unknown error')
             status_code = response.get('status_code')
 
-            # Update invoices with error
-            invoices.write({
+            # Update invoices with error (convert list to recordset)
+            invoices_recordset = self.env['account.move'].browse([inv.id for inv in unique_invoices])
+            invoices_recordset.write({
                 'netsuite_sync_status': 'failed',
                 'netsuite_error': error_msg,
             })
@@ -1301,6 +1477,79 @@ class NetSuiteConsolidatedSync(models.AbstractModel):
                 'quantity': totals['quantity'],
                 'rate': round(totals['amount'] / totals['quantity'], 2) if totals['quantity'] > 0 else 0,
                 'amount': totals['amount'],
+                'description': totals['name'],
+                'taxCode': {'id': '5'}  # Default tax code (5% VAT) - should be configurable
+            })
+
+        return items
+
+    def _aggregate_invoice_lines_proportional(self, invoice_portions, config):
+        """
+        Aggregate invoice lines with proportional amounts for split-payment invoices
+
+        Each invoice portion has a proportion (0.0 to 1.0) that represents the
+        percentage of that invoice's amounts to include.
+
+        Args:
+            invoice_portions: List of dicts with 'invoice', 'proportion', 'payment_amount'
+            config: NetSuite config
+
+        Returns:
+            list: Aggregated line items in NetSuite format
+        """
+        product_totals = defaultdict(lambda: {'quantity': 0, 'amount': 0, 'product_id': None, 'name': ''})
+        products_without_netsuite_id = []
+
+        for portion_data in invoice_portions:
+            invoice = portion_data['invoice']
+            proportion = portion_data['proportion']
+
+            for line in invoice.invoice_line_ids:
+                if line.display_type in ('line_section', 'line_note'):
+                    continue
+
+                product = line.product_id
+                if not product:
+                    continue
+
+                # CRITICAL: Validate that product has NetSuite ID
+                if not product.x_netsuite_id:
+                    if product.name not in products_without_netsuite_id:
+                        products_without_netsuite_id.append(product.name)
+                    continue
+
+                product_key = product.x_netsuite_id
+
+                # Apply proportion to quantities and amounts
+                proportional_qty = line.quantity * proportion
+                proportional_amount = line.price_subtotal * proportion
+
+                product_totals[product_key]['quantity'] += proportional_qty
+                product_totals[product_key]['amount'] += proportional_amount
+                product_totals[product_key]['product_id'] = product.x_netsuite_id
+                product_totals[product_key]['name'] = product.name
+
+        # Raise error if any products are missing NetSuite IDs
+        if products_without_netsuite_id:
+            product_list = '\n'.join([f'   • {p}' for p in products_without_netsuite_id[:15]])
+            if len(products_without_netsuite_id) > 15:
+                product_list += f'\n   ... and {len(products_without_netsuite_id) - 15} more'
+
+            error_msg = _(
+                f'Cannot sync: {len(products_without_netsuite_id)} product(s) missing NetSuite IDs:\n\n'
+                f'{product_list}\n\n'
+                'Please add NetSuite ID to products before syncing.'
+            )
+            raise ValidationError(error_msg)
+
+        # Convert to NetSuite line items format
+        items = []
+        for product_id, totals in product_totals.items():
+            items.append({
+                'item': {'id': str(product_id)},  # NetSuite item reference
+                'quantity': round(totals['quantity'], 3),  # Round to 3 decimals for split payments
+                'rate': round(totals['amount'] / totals['quantity'], 2) if totals['quantity'] > 0 else 0,
+                'amount': round(totals['amount'], 2),
                 'description': totals['name'],
                 'taxCode': {'id': '5'}  # Default tax code (5% VAT) - should be configurable
             })
