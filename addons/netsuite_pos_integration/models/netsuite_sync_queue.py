@@ -226,7 +226,7 @@ class NetSuiteSyncQueue(models.Model):
 
                 # Handle retry logic
                 config = queue_item.config_id
-                if config.enable_retry and queue_item.retry_count < config.max_retry_attempts:
+                if config.config_retry_enabled and queue_item.retry_count < config.config_max_retries:
                     next_retry = fields.Datetime.now()
                     queue_item.write({
                         'status': 'retry',
@@ -273,7 +273,7 @@ class NetSuiteSyncQueue(models.Model):
         _logger.info('Starting retry processing')
 
         config = self.env['netsuite.config'].get_active_config()
-        if not config.enable_retry:
+        if not config.config_retry_enabled:
             return
 
         # Get items eligible for retry
@@ -281,7 +281,7 @@ class NetSuiteSyncQueue(models.Model):
             ('status', '=', 'retry'),
             ('scheduled_date', '<=', fields.Datetime.now()),
             ('config_id', '=', config.id)
-        ], limit=config.config_order_batch_size or 100)
+        ], limit=100)
 
         if retry_items:
             _logger.info(f'Retrying {len(retry_items)} items')

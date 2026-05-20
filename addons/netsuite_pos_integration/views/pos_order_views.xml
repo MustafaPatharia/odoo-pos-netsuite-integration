@@ -12,7 +12,7 @@
 
             <xpath expr="//sheet/group" position="after">
                 <group name="netsuite_sync" string="NetSuite Sync Information">
-                    <group>
+                    <group string="Order Sync">
                         <field name="netsuite_sync_status" widget="badge"
                                decoration-success="netsuite_sync_status == 'synced'"
                                decoration-warning="netsuite_sync_status == 'queued'"
@@ -20,10 +20,23 @@
                         <field name="netsuite_tran_id" readonly="1"/>
                         <field name="netsuite_id" readonly="1"/>
                     </group>
-                    <group>
+                    <group string="Order Details">
                         <field name="netsuite_sync_date" readonly="1"/>
                         <field name="netsuite_sync_count" readonly="1"/>
                         <field name="netsuite_error" readonly="1" invisible="not netsuite_error"/>
+                    </group>
+                </group>
+                
+                <group name="netsuite_invoice_sync" string="Invoice Sync Information">
+                    <group>
+                        <field name="invoice_netsuite_sync_status" widget="badge"
+                               decoration-success="invoice_netsuite_sync_status == 'synced'"
+                               decoration-warning="invoice_netsuite_sync_status == 'queued'"
+                               decoration-danger="invoice_netsuite_sync_status == 'failed'"
+                               decoration-info="invoice_netsuite_sync_status == 'no_invoice'"/>
+                        <field name="invoice_netsuite_id" readonly="1"/>
+                    </group>
+                    <group>
                     </group>
                 </group>
             </xpath>
@@ -42,8 +55,13 @@
                 <attribute name="decoration-danger">netsuite_sync_status == 'failed'</attribute>
             </xpath>
             <xpath expr="//field[@name='amount_total']" position="after">
-                <field name="netsuite_sync_status" optional="show"/>
+                <field name="netsuite_sync_status" string="Order Sync" optional="show"/>
                 <field name="netsuite_tran_id" optional="hide"/>
+                <field name="invoice_netsuite_sync_status" string="Invoice Sync" optional="show" 
+                       decoration-success="invoice_netsuite_sync_status == 'synced'"
+                       decoration-warning="invoice_netsuite_sync_status == 'queued'"
+                       decoration-danger="invoice_netsuite_sync_status == 'failed'"
+                       decoration-info="invoice_netsuite_sync_status == 'no_invoice'"/>
             </xpath>
         </field>
     </record>

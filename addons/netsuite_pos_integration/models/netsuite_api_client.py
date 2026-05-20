@@ -179,9 +179,10 @@ class NetSuiteAPIClient(models.AbstractModel):
 
         order_data['total'] = total_amount
 
-        # Make API request
+        # Make API request to NetSuite Standard REST API
+        endpoint = '/services/rest/record/v1/salesorder'
         success, response_data, error_msg, status_code, execution_time = self._make_request(
-            config, 'salesorder', 'POST', order_data
+            config, endpoint, 'POST', order_data
         )
 
         # Log the sync
@@ -191,7 +192,7 @@ class NetSuiteAPIClient(models.AbstractModel):
 
         self._log_sync(
             config, pos_order.name, 'sales_order', pos_order.id, 'pos.order',
-            log_status, 'create', f"{config.api_url}/salesorder", 'POST',
+            log_status, 'create', f"{config.api_url}{endpoint}", 'POST',
             order_data, response_data, error_msg, status_code, execution_time,
             netsuite_id, netsuite_tran_id
         )

@@ -149,22 +149,41 @@ class AccountMove(models.Model):
         return invoices
 
     def write(self, vals):
-        """Override write to trigger auto-sync when invoice is posted"""
+        """Override write to trigger auto-sync when invoice is posted or paid"""
         result = super(AccountMove, self).write(vals)
 
-        # Realtime mode: sync immediately when invoice is posted
-        if 'state' in vals and vals.get('state') == 'posted':
-            config = self.env['netsuite.config'].search([('active', '=', True)], limit=1)
-            if config and config.config_integration_mode == 'realtime':
-                # Filter only customer invoices
-                invoices_to_sync = self.filtered(
-                    lambda inv: inv.move_type == 'out_invoice'
-                    and inv.state == 'posted'
-                    and inv.netsuite_sync_status not in ['synced', 'queued']
-                )
+        config = self.env['netsuite.config'].search([('active', '=', True)], limit=1)
+        if not config or config.config_integration_mode != 'realtime':
+            return result
 
-                if invoices_to_sync:
-                    _logger.info(f'[NetSuite Invoice Realtime] Triggering auto-sync for {len(invoices_to_sync)} invoice(s)')
+        # Trigger sync when: invoice is posted OR payment is registered
+        should_sync = False
+        if 'state' in vals and vals.get('state') == 'posted':
+            should_sync = True
+        elif 'payment_state' in vals and vals.get('payment_state') in ['paid', 'in_payment', 'partial']:
+            should_sync = True
+
+        if should_sync:
+            # Filter only customer invoices that are posted and not already synced
+            # Allow retrying if queued (might be stuck) or failed
+            invoices_to_sync = self.filtered(
+                lambda inv: inv.move_type == 'out_invoice'
+                and inv.state == 'posted'
+                and inv.netsuite_sync_status != 'synced'  # Only skip if already synced
+            )
+
+            if invoices_to_sync:
+                _logger.info(f'[NetSuite Invoice Realtime] Triggering auto-sync for {len(invoices_to_sync)} invoice(s)')
+                try:
+                    # Non-blocking: sync in background, don't fail invoice creation if sync fails
                     invoices_to_sync._auto_sync_to_netsuite()
+                except Exception as sync_error:
+                    # Log error but don't block invoice creation
+                    _logger.error(f'[NetSuite Invoice Realtime] Sync failed but invoice created: {str(sync_error)}')
+                    for invoice in invoices_to_sync:
+                        invoice.write({
+                            'netsuite_sync_status': 'failed',
+                            'netsuite_error': str(sync_error)
+                        })
 
         return result

@@ -54,6 +54,24 @@ class PosOrder(models.Model):
         copy=False
     )
 
+    # Related Invoice Sync Status (for realtime invoice sync)
+    invoice_netsuite_sync_status = fields.Selection([
+        ('no_invoice', 'No Invoice'),
+        ('not_synced', 'Not Synced'),
+        ('queued', 'Queued'),
+        ('synced', 'Synced'),
+        ('failed', 'Failed'),
+    ], string='Invoice Sync Status',
+        compute='_compute_invoice_sync_status',
+        help='NetSuite sync status of the related invoice(s)'
+    )
+
+    invoice_netsuite_id = fields.Char(
+        string='Invoice NetSuite ID',
+        compute='_compute_invoice_sync_status',
+        help='NetSuite ID of the related invoice'
+    )
+
     # Invoice sync fields (for consolidated invoice sync)
     x_netsuite_invoice_id = fields.Char(
         string='NetSuite Invoice ID',
@@ -68,6 +86,24 @@ class PosOrder(models.Model):
         copy=False,
         help='Date when this order was synced as part of a consolidated invoice'
     )
+
+    def _compute_invoice_sync_status(self):
+        """Compute invoice sync status from related invoice(s)"""
+        for order in self:
+            # Get customer invoices related to this POS order
+            # Search via pos_order_ids reverse M2M relationship
+            invoices = self.env['account.move'].search([
+                ('pos_order_ids', 'in', order.id),
+                ('move_type', '=', 'out_invoice')
+            ], limit=1)
+
+            if invoices:
+                invoice = invoices[0]
+                order.invoice_netsuite_sync_status = invoice.netsuite_sync_status or 'not_synced'
+                order.invoice_netsuite_id = invoice.netsuite_id or ''
+            else:
+                order.invoice_netsuite_sync_status = 'no_invoice'
+                order.invoice_netsuite_id = ''
 
     def action_sync_to_netsuite(self):
         """
@@ -334,7 +370,16 @@ class PosOrder(models.Model):
         # Realtime mode: sync immediately when order is confirmed
         config = self.env['netsuite.config'].search([('active', '=', True)], limit=1)
         if config and config.config_integration_mode == 'realtime' and order.state in ['paid', 'done', 'invoiced']:
-            order._auto_sync_to_netsuite()
+            try:
+                # Non-blocking: sync in background, don't fail order creation if sync fails
+                order._auto_sync_to_netsuite()
+            except Exception as sync_error:
+                # Log error but don't block order creation
+                _logger.error(f'[NetSuite Order Realtime] Sync failed but order created: {str(sync_error)}')
+                order.write({
+                    'netsuite_sync_status': 'failed',
+                    'netsuite_error': str(sync_error)
+                })
 
         return order
 
@@ -346,6 +391,16 @@ class PosOrder(models.Model):
         if 'state' in vals and vals.get('state') in ['paid', 'done', 'invoiced']:
             config = self.env['netsuite.config'].search([('active', '=', True)], limit=1)
             if config and config.config_integration_mode == 'realtime':
-                self._auto_sync_to_netsuite()
+                try:
+                    # Non-blocking: sync in background, don't fail order if sync fails
+                    self._auto_sync_to_netsuite()
+                except Exception as sync_error:
+                    # Log error but don't block order creation
+                    _logger.error(f'[NetSuite Order Realtime] Sync failed but order created: {str(sync_error)}')
+                    for order in self:
+                        order.write({
+                            'netsuite_sync_status': 'failed',
+                            'netsuite_error': str(sync_error)
+                        })
 
         return result
